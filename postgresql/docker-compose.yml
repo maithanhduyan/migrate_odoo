@@ -1,0 +1,26 @@
+services:
+
+  db:
+    container_name: postgresql
+    image: postgres:17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo@pwd
+      POSTGRES_DB: postgres
+    volumes:
+      - ./data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+      - ./conf/postgresql.conf:/etc/postgresql/postgresql.conf
+    command: >
+      postgres 
+      -c config_file=/etc/postgresql/postgresql.conf
+    networks:
+      - odoo_net    
+    restart: always # run as a service
+
+networks:
+  odoo_net:
+    external: true
+

@@ -1,0 +1,23 @@
+services:
+  odoo:
+    container_name: odoo_16
+    image: odoo:16.0
+    environment:
+      - HOST=postgresql
+      - USER=odoo
+      - PASSWORD=odoo@pwd
+    volumes:
+      - ./addons:/mnt/extra-addons # contain odoo dev modules
+      - ./conf:/etc/odoo # contain config and log
+      - ./web-data:/var/lib/odoo # contain odoo web data
+      - ./log:/var/log/odoo # contain odoo log data
+    ports:
+      - "8016:8069" # web
+      # - "8018:8072" # longpolling
+    networks:
+      - odoo_net
+    restart: always
+
+networks:
+  odoo_net:
+    external: true
