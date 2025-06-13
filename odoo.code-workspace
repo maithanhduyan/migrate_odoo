@@ -84,7 +84,11 @@
         
         // Disable Copilot temporarily
         "github.copilot.enable": {
-            "*": false
+            "*": false,
+            "plaintext": false,
+            "markdown": false,
+            "scminput": false,
+            "python": true
         },
         "files.autoSave": "off"
     },

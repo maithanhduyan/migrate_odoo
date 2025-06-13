@@ -1,7 +1,7 @@
 services:
   odoo:
-    container_name: odoo_16
-    image: odoo:16.0
+    container_name: odoo_17
+    image: odoo:17.0
     environment:
       - HOST=postgresql
       - USER=odoo
@@ -12,12 +12,17 @@ services:
       - ./web-data:/var/lib/odoo # contain odoo web data
       - ./log:/var/log/odoo # contain odoo log data
     ports:
-      - "8016:8069" # web
-      # - "8018:8072" # longpolling
+      - "8017:8069" # web
+      - "8372:8072" # longpolling
     networks:
       - odoo_net
     restart: always
-
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8069", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 networks:
   odoo_net:
     external: true
