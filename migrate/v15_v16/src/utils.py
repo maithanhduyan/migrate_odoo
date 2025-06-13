@@ -1,293 +1,93 @@
 """
-Utilities for Odoo Migration v15 to v16
+Simple Utilities for Odoo Migration v15 to v16
+Essential functions only - no complex dependencies
 """
-import os
-import logging
 import subprocess
-from typing import Optional, Dict, Any, List, Tuple
+import socket
+import logging
+import os
+import time
+from typing import Tuple, Optional, List, Dict, Any
 from datetime import datetime
-from pathlib import Path
-import docker
-import requests
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 
-class ColoredFormatter(logging.Formatter):
-    """Custom formatter with colors for different log levels"""
+def run_command(command: str, cwd: Optional[str] = None, timeout: int = 30) -> Tuple[bool, str]:
+    """
+    Run shell command and return success status and output
 
-    COLORS = {
-        'DEBUG': '\033[36m',      # Cyan
-        'INFO': '\033[32m',       # Green
-        'WARNING': '\033[33m',    # Yellow
-        'ERROR': '\033[31m',      # Red
-        'CRITICAL': '\033[35m',   # Magenta
-    }
-    RESET = '\033[0m'
+    Args:
+        command: Command to run
+        cwd: Working directory  
+        timeout: Command timeout in seconds
 
-    def format(self, record):
-        log_color = self.COLORS.get(record.levelname, self.RESET)
-        record.levelname = f"{log_color}{record.levelname}{self.RESET}"
-        return super().format(record)
-
-
-def setup_logging(log_level: str = "INFO", log_file: Optional[str] = None) -> logging.Logger:
-    """Setup logging configuration"""
-    logger = logging.getLogger("odoo_migration")
-    logger.setLevel(getattr(logging, log_level.upper()))
-
-    # Clear existing handlers
-    logger.handlers.clear()
-
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_formatter = ColoredFormatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
-
-    # File handler
-    if log_file:
-        os.makedirs(os.path.dirname(log_file), exist_ok=True)
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        file_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
-
-    return logger
-
-
-class DockerManager:
-    """Manager for Docker operations"""
-
-    def __init__(self):
-        try:
-            self.client = docker.from_env()
-        except Exception as e:
-            raise RuntimeError(f"Failed to connect to Docker: {e}")
-
-    def is_container_running(self, container_name: str) -> bool:
-        """Check if container is running"""
-        try:
-            container = self.client.containers.get(container_name)
-            return container.status == "running"
-        except docker.errors.NotFound:
-            return False
-        except Exception:
-            return False
-
-    def get_container_status(self, container_name: str) -> Optional[str]:
-        """Get container status"""
-        try:
-            container = self.client.containers.get(container_name)
-            return container.status
-        except docker.errors.NotFound:
-            return None
-        except Exception:
-            return None
-
-    def get_container_logs(self, container_name: str, tail: int = 10) -> List[str]:
-        """Get container logs"""
-        try:
-            container = self.client.containers.get(container_name)
-            logs = container.logs(tail=tail, decode=True)
-            return logs.strip().split('\n') if logs else []
-        except Exception:
-            return []
-
-    def get_container_ports(self, container_name: str) -> Dict[str, Any]:
-        """Get container port mappings"""
-        try:
-            container = self.client.containers.get(container_name)
-            return container.attrs.get('NetworkSettings', {}).get('Ports', {})
-        except Exception:
-            return {}
-
-    def network_exists(self, network_name: str) -> bool:
-        """Check if Docker network exists"""
-        try:
-            self.client.networks.get(network_name)
-            return True
-        except docker.errors.NotFound:
-            return False
-        except Exception:
-            return False
-
-    def create_network(self, network_name: str) -> bool:
-        """Create Docker network"""
-        try:
-            self.client.networks.create(network_name)
-            return True
-        except Exception:
-            return False
-
-    def ping_container(self, from_container: str, to_container: str) -> bool:
-        """Test network connectivity between containers"""
-        try:
-            container = self.client.containers.get(from_container)
-            result = container.exec_run(f"ping -c 1 {to_container}")
-            return result.exit_code == 0
-        except Exception:
-            return False
-
-
-class HealthChecker:
-    """Health checker for services"""
-
-    def __init__(self, docker_manager: DockerManager, logger: logging.Logger):
-        self.docker = docker_manager
-        self.logger = logger
-
-    def check_web_service(self, url: str, timeout: int = 10) -> Tuple[bool, Optional[int]]:
-        """Check if web service is accessible"""
-        try:
-            response = requests.head(url, timeout=timeout)
-            return True, response.status_code
-        except requests.exceptions.RequestException:
-            return False, None
-
-    def check_database_connection(self, container_name: str, db_config: Dict[str, Any]) -> bool:
-        """Check database connection from container"""
-        try:
-            container = self.docker.client.containers.get(container_name)
-            cmd = f"psql -h {db_config['host']} -U {db_config['user']} -d {db_config['database']} -c '\\l'"
-            result = container.exec_run(cmd, environment={'PGPASSWORD': db_config['password']})
-            return result.exit_code == 0
-        except Exception:
-            return False
-
-    def check_postgresql_ready(self, container_name: str, user: str) -> bool:
-        """Check if PostgreSQL is ready for connections"""
-        try:
-            container = self.docker.client.containers.get(container_name)
-            result = container.exec_run(f"pg_isready -U {user}")
-            return result.exit_code == 0
-        except Exception:
-            return False
-
-
-class PortChecker:
-    """Port availability checker"""
-
-    @staticmethod
-    def is_port_in_use(port: int) -> bool:
-        """Check if port is in use"""
-        import socket
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            return s.connect_ex(('localhost', port)) == 0
-
-    @staticmethod
-    def get_port_usage(ports: List[int]) -> Dict[int, bool]:
-        """Get usage status for multiple ports"""
-        return {port: PortChecker.is_port_in_use(port) for port in ports}
-
-
-class ReportGenerator:
-    """Generate health check reports"""
-
-    def __init__(self, console: Console):
-        self.console = console
-
-    def generate_summary_table(self, results: Dict[str, Any]) -> Table:
-        """Generate summary table"""
-        table = Table(title="🔍 Environment Health Check Summary")
-        table.add_column("Component", style="cyan", no_wrap=True)
-        table.add_column("Status", justify="center")
-        table.add_column("Details", style="dim")
-
-        # Add rows based on results
-        for component, data in results.items():
-            if isinstance(data, dict) and 'status' in data:
-                status_emoji = "✅" if data['status'] else "❌"
-                status_text = "OK" if data['status'] else "FAILED"
-                details = data.get('details', '')
-
-                table.add_row(
-                    component,
-                    f"{status_emoji} {status_text}",
-                    details
-                )
-
-        return table
-
-    def generate_port_table(self, port_usage: Dict[int, bool]) -> Table:
-        """Generate port usage table"""
-        table = Table(title="🚪 Port Usage")
-        table.add_column("Port", style="cyan")
-        table.add_column("Status", justify="center")
-        table.add_column("Service", style="dim")
-
-        service_map = {
-            5432: "PostgreSQL",
-            8069: "Odoo v15 Web",
-            8016: "Odoo v16 Web",
-            8172: "Odoo v15 Longpolling",
-            8272: "Odoo v16 Longpolling"
-        }
-
-        for port, in_use in port_usage.items():
-            status = "🟢 In Use" if in_use else "🔴 Available"
-            service = service_map.get(port, "Unknown")
-            table.add_row(str(port), status, service)
-
-        return table
-
-    def show_health_score(self, score: int, max_score: int):
-        """Show health score with color coding"""
-        percentage = (score / max_score) * 100 if max_score > 0 else 0
-
-        if percentage >= 90:
-            color = "green"
-            status = "EXCELLENT - Ready for migration!"
-            emoji = "🟢"
-        elif percentage >= 75:
-            color = "yellow"
-            status = "GOOD - Minor issues to address"
-            emoji = "🟡"
-        elif percentage >= 50:
-            color = "orange3"
-            status = "FAIR - Several issues need attention"
-            emoji = "🟠"
-        else:
-            color = "red"
-            status = "POOR - Major issues must be resolved"
-            emoji = "🔴"
-
-        panel = Panel(
-            f"{emoji} Health Score: {score}/{max_score} ({percentage:.1f}%)\n"
-            f"Status: {status}",
-            title="📊 Overall Health",
-            border_style=color
-        )
-
-        self.console.print(panel)
-
-
-def run_command(command: str, cwd: Optional[str] = None, capture_output: bool = True) -> Tuple[bool, str]:
-    """Run shell command and return success status and output"""
+    Returns:
+        Tuple of (success, output)
+    """
     try:
         result = subprocess.run(
             command,
             shell=True,
             cwd=cwd,
-            capture_output=capture_output,
+            capture_output=True,
             text=True,
+            timeout=timeout,
             encoding='utf-8'
         )
-        return result.returncode == 0, result.stdout + result.stderr
+        return result.returncode == 0, result.stdout.strip() if result.stdout else result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return False, f"Command timeout after {timeout}s"
     except Exception as e:
         return False, str(e)
 
 
-def ensure_directory(path: str):
-    """Ensure directory exists"""
-    Path(path).mkdir(parents=True, exist_ok=True)
+def check_port(port: int, host: str = 'localhost') -> bool:
+    """
+    Check if port is available/in use
+
+    Args:
+        port: Port number to check
+        host: Host to check (default: localhost)
+
+    Returns:
+        True if port is in use, False if available
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            result = sock.connect_ex((host, port))
+            return result == 0  # 0 means connection successful (port in use)
+    except Exception:
+        return False
+
+
+def setup_logging(level: str = "INFO") -> logging.Logger:
+    """
+    Setup simple logging configuration
+
+    Args:
+        level: Logging level (DEBUG, INFO, WARNING, ERROR)
+
+    Returns:
+        Configured logger
+    """
+    logger = logging.getLogger("odoo_migration")
+
+    # Clear existing handlers
+    logger.handlers.clear()
+
+    # Set level
+    logger.setLevel(getattr(logging, level.upper()))
+
+    # Create console handler
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%H:%M:%S'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    return logger
 
 
 def get_timestamp() -> str:
@@ -295,45 +95,448 @@ def get_timestamp() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
+def ensure_directory(path: str) -> None:
+    """Ensure directory exists"""
+    os.makedirs(path, exist_ok=True)
+
+
 def check_container_running(container_name: str) -> bool:
-    """Kiểm tra container có đang chạy không"""
-    try:
-        client = docker.from_env()
-        container = client.containers.get(container_name)
-        return container.status == 'running'
-    except docker.errors.NotFound:
-        return False
-    except Exception:
-        return False
+    """
+    Check if Docker container is running
+
+    Args:
+        container_name: Name of container to check
+
+    Returns:
+        True if container is running
+    """
+    success, output = run_command(
+        f"docker ps --filter name={container_name} --format table")
+    return success and container_name in output
 
 
 def check_database_connection(db_config) -> bool:
-    """Kiểm tra kết nối database"""
+    """
+    Simple database connection check using psql command
+
+    Args:
+        db_config: Database configuration object
+
+    Returns:
+        True if connection successful
+    """
+    # Try using psql command (simpler than psycopg2 dependency)
+    cmd = f"psql -h {db_config.host} -p {db_config.port} -U {db_config.user} -d postgres -c '\\l'"
+
+    # Set password via environment variable
+    env = os.environ.copy()
+    env['PGPASSWORD'] = db_config.password
+
     try:
-        import psycopg2
-        # Thử kết nối với localhost trước (từ bên ngoài container)
-        try:
-            conn = psycopg2.connect(
-                host='localhost',
-                port=db_config.port,
-                user=db_config.user,
-                password=db_config.password,
-                database='postgres',
-                connect_timeout=10
-            )
-            conn.close()
-            return True
-        except psycopg2.OperationalError:
-            # Nếu localhost không được, thử với host config
-            conn = psycopg2.connect(
-                host=db_config.host,
-                port=db_config.port,
-                user=db_config.user,
-                password=db_config.password,
-                database='postgres',
-                connect_timeout=10
-            )
-            conn.close()
-            return True
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
     except Exception:
         return False
+
+
+def wait_for_service(url: str, timeout: int = 60) -> bool:
+    """
+    Wait for web service to be ready
+
+    Args:
+        url: URL to check
+        timeout: Maximum wait time in seconds
+
+    Returns:
+        True if service becomes ready
+    """
+    import urllib.request
+
+    start_time = time.time()
+
+    while time.time() - start_time < timeout:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                if response.status == 200:
+                    return True
+        except Exception:
+            pass
+
+        time.sleep(2)
+
+    return False
+
+
+class DockerManager:
+    """Simple Docker container management"""
+
+    def __init__(self):
+        self.logger = setup_logging()
+
+    def get_container_status(self, container_name: str) -> Optional[str]:
+        """
+        Get container status
+
+        Args:
+            container_name: Name of container
+
+        Returns:
+            Container status string or None if not found
+        """
+        success, output = run_command(
+            f"docker ps -a --filter name=^{container_name}$ --format '{{{{.Status}}}}'"
+        )
+
+        if success and output:
+            if "Up" in output:
+                return "running"
+            elif "Exited" in output:
+                return "stopped"
+            else:
+                return output.strip()
+
+        return None
+
+    def start_container(self, container_name: str) -> bool:
+        """
+        Start container
+
+        Args:
+            container_name: Name of container to start
+
+        Returns:
+            True if successful
+        """
+        success, output = run_command(f"docker start {container_name}")
+        return success
+
+    def stop_container(self, container_name: str) -> bool:
+        """
+        Stop container
+
+        Args:
+            container_name: Name of container to stop
+
+        Returns:
+            True if successful
+        """
+        success, output = run_command(f"docker stop {container_name}")
+        return success
+
+
+def check_database_exists_mcp(database_name: str) -> bool:
+    """
+    Check if database exists using MCP PostgreSQL
+
+    Args:
+        database_name: Name of database to check
+
+    Returns:
+        True if database exists
+    """
+    try:
+        # Get list of databases using external MCP functions
+        databases = get_databases_list_mcp()
+        return database_name in databases
+
+    except Exception as e:
+        # Fallback to basic method if MCP fails
+        return check_database_exists_basic(database_name)
+
+
+def get_databases_list_mcp() -> List[str]:
+    """
+    Get list of databases using Docker PostgreSQL connection
+
+    Returns:
+        List of database names
+    """
+    try:        # Use Docker to connect to PostgreSQL container
+        cmd = 'docker exec postgresql psql -U odoo -d postgres -t -c "SELECT datname FROM pg_database WHERE datistemplate = false;"'
+
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if result.returncode == 0:
+            # Parse the output to get database names
+            databases = []
+            for line in result.stdout.strip().split('\n'):
+                db_name = line.strip()
+                if db_name and not db_name.startswith('-') and db_name != '':
+                    databases.append(db_name)
+            return databases
+        else:
+            # Fallback to basic list
+            return ['postgres']
+
+    except Exception as e:
+        # Fallback to basic list
+        return ['postgres']
+
+
+def check_database_exists_basic(database_name: str) -> bool:
+    """
+    Basic database existence check using Docker PostgreSQL
+
+    Args:
+        database_name: Name of database to check
+
+    Returns:
+        True if database exists
+    """
+    try:        # Use Docker to check if database exists
+        cmd = f'docker exec postgresql psql -U odoo -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname=\'{database_name}\'"'
+
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        return result.returncode == 0 and '1' in result.stdout.strip()
+
+    except Exception:
+        return False
+
+
+def list_databases_mcp() -> List[str]:
+    """
+    List all databases using MCP PostgreSQL via subprocess
+
+    Returns:
+        List of database names
+    """
+    try:
+        # Call mcp functions directly
+        cmd = 'python -c "from pg_mcp.src.server import list_databases; print(list_databases())"'
+
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=os.path.join(os.path.dirname(__file__), '..', '..')
+        )
+
+        if result.returncode == 0:
+            import json
+            databases = json.loads(result.stdout.strip())
+            return databases
+
+        return []
+
+    except Exception:
+        return []
+
+
+def get_database_size_mcp(database_name: str) -> str:
+    """
+    Get database size using MCP PostgreSQL via subprocess
+
+    Args:
+        database_name: Name of database
+
+    Returns:
+        Human readable size string
+    """
+    try:
+        cmd = f'python -c "from pg_mcp.src.server import execute_query; result = execute_query(\'SELECT pg_size_pretty(pg_database_size(\\\\\\\'{database_name}\\\\\\\')) as size\'); print(result)"'
+
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=os.path.join(os.path.dirname(__file__), '..', '..')
+        )
+
+        if result.returncode == 0:
+            import json
+            data = json.loads(result.stdout.strip())
+            if data.get('rows'):
+                return data['rows'][0][0]
+
+        return "Unknown"
+
+    except Exception:
+        return "Unknown"
+
+
+def delete_database_mcp(database_name: str) -> Tuple[bool, str]:
+    """
+    Delete database using MCP PostgreSQL via subprocess
+
+    Args:
+        database_name: Name of database to delete
+
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        # First terminate connections
+        terminate_cmd = f'python -c "from pg_mcp.src.server import execute_query; execute_query(\'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = \\\\\\\'{database_name}\\\\\\\' AND pid <> pg_backend_pid()\')"'
+
+        subprocess.run(
+            terminate_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=os.path.join(os.path.dirname(__file__), '..', '..')
+        )
+
+        # Then drop database
+        drop_cmd = f'python -c "from pg_mcp.src.server import execute_query; execute_query(\'DROP DATABASE IF EXISTS \\\\\\\"{database_name}\\\\\\\"\')"'
+
+        result = subprocess.run(
+            drop_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=os.path.join(os.path.dirname(__file__), '..', '..')
+        )
+
+        if result.returncode == 0:
+            return True, f"Database {database_name} deleted successfully"
+        else:
+            return False, f"Failed to delete database: {result.stderr}"
+
+    except Exception as e:
+        return False, f"Failed to delete database {database_name}: {str(e)}"
+
+
+def validate_database_deletion_mcp(expected_deleted_databases: List[str]) -> Dict[str, Any]:
+    """
+    Validate database deletion using MCP PostgreSQL
+
+    Args:
+        expected_deleted_databases: List of database names that should be deleted
+
+    Returns:
+        Dict containing validation results
+    """
+    logger = setup_logging()
+
+    validation_result = {
+        'status': 'success',
+        'total_checked': len(expected_deleted_databases),
+        'successfully_deleted': 0,
+        'still_exists': [],
+        'validation_details': {},
+        'database_count': 0,
+        'existing_databases': []
+    }
+
+    try:
+        logger.info(
+            "🔍 Starting database deletion validation using MCP PostgreSQL...")
+
+        # Get current list of databases using MCP
+        current_databases = get_databases_list_mcp()
+        validation_result['database_count'] = len(current_databases)
+        validation_result['existing_databases'] = current_databases
+
+        logger.info(f"📊 Current databases found: {current_databases}")
+
+        # Check each expected deleted database
+        for db_name in expected_deleted_databases:
+            if db_name in current_databases:
+                validation_result['still_exists'].append(db_name)
+                validation_result['validation_details'][db_name] = {
+                    'deleted': False,
+                    'status': 'ERROR: Still exists',
+                    'size': get_database_size_mcp(db_name)
+                }
+                logger.error(
+                    f"❌ Database {db_name} still exists - deletion failed!")
+            else:
+                validation_result['successfully_deleted'] += 1
+                validation_result['validation_details'][db_name] = {
+                    'deleted': True,
+                    'status': 'Successfully deleted',
+                    'size': 'N/A'
+                }
+                logger.info(f"✅ Database {db_name} confirmed deleted")
+
+        # Determine overall status
+        if validation_result['still_exists']:
+            validation_result['status'] = 'partial_failure'
+
+        logger.info(
+            f"🎯 Validation complete: {validation_result['successfully_deleted']}/{validation_result['total_checked']} databases deleted successfully")
+
+        return validation_result
+
+    except Exception as e:
+        logger.error(f"❌ Validation failed: {e}")
+        validation_result['status'] = 'error'
+        validation_result['error'] = str(e)
+        return validation_result
+
+
+def verify_postgresql_health_mcp() -> Dict[str, Any]:
+    """
+    Verify PostgreSQL health using MCP PostgreSQL
+
+    Returns:
+        Dict containing health check results
+    """
+    logger = setup_logging()
+
+    health_result = {
+        'status': 'healthy',
+        'connection': False,
+        'database_count': 0,
+        'databases': [],
+        'total_size': 'Unknown',
+        'system_databases': 0,
+        'user_databases': 0
+    }
+
+    try:
+        logger.info("🔍 Checking PostgreSQL health using MCP...")
+
+        # Test connection and get database list
+        databases = get_databases_list_mcp()
+        health_result['connection'] = len(databases) > 0
+        health_result['database_count'] = len(databases)
+        health_result['databases'] = databases
+
+        # Categorize databases
+        system_dbs = ['postgres', 'template0', 'template1']
+        health_result['system_databases'] = len(
+            [db for db in databases if db in system_dbs])
+        health_result['user_databases'] = len(
+            [db for db in databases if db not in system_dbs])
+
+        # Get total size of postgres database as health indicator
+        if 'postgres' in databases:
+            health_result['total_size'] = get_database_size_mcp('postgres')
+
+        logger.info(
+            f"✅ PostgreSQL health check complete: {health_result['database_count']} databases, {health_result['user_databases']} user DBs")
+
+        return health_result
+
+    except Exception as e:
+        logger.error(f"❌ Health check failed: {e}")
+        health_result['status'] = 'error'
+        health_result['error'] = str(e)
+        return health_result

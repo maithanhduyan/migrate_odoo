@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "postgres-mcp"
+version = "0.1.0"
+description = "PostgreSQL MCP Server - AI có thể trò chuyện với PostgreSQL database"
+readme = "README.md"
+license = "MIT"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "psycopg2-binary>=2.9.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+]
+requires-python = ">=3.10"
+
+[project.scripts]
+postgres-mcp = "src.server:main"
+
+[project.urls]
+Homepage = "https://github.com/your-username/postgres-mcp"
+Repository = "https://github.com/your-username/postgres-mcp.git"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.uv]
+dev-dependencies = []

@@ -510,3 +510,187 @@ class DatabaseSetup:
             self.logger.error(f"❌ Error cleaning up {database_name}: {e}")
 
         return result
+
+    def create_demo_database(self, database_name: str, version: str = None) -> Dict[str, Any]:
+        """
+        Tạo database demo với tên tùy chỉnh và khởi tạo đầy đủ Odoo schema
+
+        Args:
+            database_name: Tên database cần tạo
+            version: Phiên bản Odoo (v15 hoặc v16)
+
+        Returns:
+            Dict chứa kết quả tạo database
+        """
+        result = {
+            'status': 'in_progress',
+            'database': database_name,
+            'version': version,
+            'error': None,
+            'has_schema': False
+        }
+
+        try:
+            self.logger.info(f"🏗️ Tạo demo database: {database_name}")
+
+            # Bước 1: Tạo PostgreSQL database trống
+            self._create_postgresql_database(database_name)
+
+            # Bước 2: Khởi tạo Odoo schema và dữ liệu (nếu có version)
+            if version:
+                self.logger.info(f"🔧 Khởi tạo Odoo schema cho {version}")
+                self._initialize_odoo_database(database_name, version)
+                result['has_schema'] = True
+            else:
+                self.logger.info(
+                    "⚠️ Chỉ tạo PostgreSQL database trống (không có version)")
+
+            result['status'] = 'completed'
+            self.logger.info(f"✅ Hoàn thành tạo database {database_name}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Lỗi khi tạo database {database_name}: {e}")
+            result['status'] = 'failed'
+            result['error'] = str(e)
+
+        return result
+
+    def _initialize_odoo_database(self, database_name: str, version: str) -> None:
+        """
+        Khởi tạo Odoo database với schema và dữ liệu cơ bản bằng command line
+
+        Args:
+            database_name: Tên database
+            version: Phiên bản Odoo (v15 hoặc v16)
+        """
+        self.logger.info(
+            f"🔧 Khởi tạo Odoo schema cho database: {database_name}")
+
+        try:
+            # Xác định container dựa trên version
+            if version == 'v15':
+                container_name = self.config.odoo_v15.container_name
+            elif version == 'v16':
+                container_name = self.config.odoo_v16.container_name
+            else:
+                raise ValueError(f"Unsupported version: {version}")
+
+            # Đảm bảo container đang chạy
+            if not check_container_running(container_name):
+                self._start_odoo_container(version)
+                time.sleep(15)  # Đợi container khởi động đầy đủ
+
+            self.logger.info(
+                f"📡 Khởi tạo database qua Odoo CLI trong container {container_name}")
+            # Sử dụng Odoo CLI để tạo database với dữ liệu demo (không chạy server)
+            odoo_init_cmd = [
+                "docker", "exec", container_name,
+                "odoo",
+                "-d", database_name,
+                "-i", "base,web",  # Install base modules
+                "--database", database_name,
+                "--db_host", "postgresql",
+                "--db_port", "5432",
+                "--db_user", "odoo",
+                "--db_password", "odoo@pwd",
+                "--stop-after-init",  # Thoát sau khi khởi tạo
+                "--without-demo=False",  # Cài đặt dữ liệu demo
+                "--no-http"  # Không start HTTP server
+            ]
+
+            # Chạy lệnh khởi tạo
+            result = subprocess.run(
+                odoo_init_cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 phút timeout
+            )
+
+            if result.returncode == 0:
+                self.logger.info(
+                    f"✅ Đã khởi tạo Odoo database {database_name} thành công")
+
+                # Đợi một chút để database ổn định
+                time.sleep(5)
+
+                # Kiểm tra xem database đã có bảng chưa
+                self._verify_database_schema(database_name)
+
+            else:
+                error_msg = result.stderr if result.stderr else result.stdout
+                self.logger.error(f"❌ Lỗi từ Odoo CLI: {error_msg}")
+                raise Exception(f"Odoo CLI failed: {error_msg}")
+
+        except subprocess.TimeoutExpired:
+            self.logger.error("❌ Timeout khi khởi tạo Odoo database")
+            raise Exception("Khởi tạo database bị timeout")
+        except Exception as e:
+            self.logger.error(
+                f"❌ Lỗi khởi tạo Odoo database {database_name}: {e}")
+            raise Exception(f"Lỗi khởi tạo Odoo database: {e}")
+
+    def _verify_database_schema(self, database_name: str) -> None:
+        """
+        Kiểm tra xem database đã được khởi tạo đầy đủ schema chưa
+
+        Args:
+            database_name: Tên database cần kiểm tra
+        """
+        try:
+            self.logger.info(
+                f"🔍 Kiểm tra schema của database: {database_name}")
+
+            # Kết nối đến database vừa tạo
+            conn = psycopg2.connect(
+                host='localhost',
+                port=self.config.postgresql.port,
+                user=self.config.postgresql.user,
+                password=self.config.postgresql.password,
+                database=database_name
+            )
+
+            with conn.cursor() as cursor:
+                # Kiểm tra số lượng bảng
+                cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public'
+                """)
+
+                table_count = cursor.fetchone()[0]
+
+                if table_count > 0:
+                    self.logger.info(
+                        f"✅ Database {database_name} có {table_count} bảng")
+
+                    # Kiểm tra một số bảng quan trọng của Odoo
+                    essential_tables = ['res_users',
+                                        'res_company', 'ir_module_module']
+                    missing_tables = []
+
+                    for table in essential_tables:
+                        cursor.execute("""
+                            SELECT EXISTS (
+                                SELECT FROM information_schema.tables 
+                                WHERE table_schema = 'public' 
+                                AND table_name = %s
+                            )
+                        """, (table,))
+
+                        if not cursor.fetchone()[0]:
+                            missing_tables.append(table)
+
+                    if missing_tables:
+                        raise Exception(
+                            f"Thiếu các bảng quan trọng: {missing_tables}")
+                    else:
+                        self.logger.info("✅ Tất cả bảng quan trọng đều có")
+
+                else:
+                    raise Exception("Database trống, chưa có bảng nào")
+
+            conn.close()
+
+        except Exception as e:
+            self.logger.error(f"❌ Lỗi kiểm tra schema: {e}")
+            raise Exception(f"Database chưa được khởi tạo đúng: {e}")
