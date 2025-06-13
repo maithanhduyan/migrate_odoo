@@ -42,7 +42,6 @@
             "**/services/**/volumes": true,
             "**/services/**/data": true
         },
-        
         // Tắt hoàn toàn TypeScript language service
         "typescript.enabled": false,
         "typescript.suggest.enabled": false,
@@ -50,38 +49,31 @@
         "javascript.enabled": false,
         "javascript.suggest.enabled": false,
         "javascript.validate.enable": false,
-        
         // Tắt Git tracking để giảm RAM
         "git.enabled": true,
         "git.autoRepositoryDetection": false,
         "git.scanRepositories": [],
-        
         // Giới hạn extension host memory
         "extension-host.memory.maxSize": 512,
         "extension-host.memory.warning": 256,
-        
         // Tắt các tính năng nặng
         "editor.minimap.enabled": false,
         "editor.codeLens": false,
         "breadcrumbs.enabled": false,
         "workbench.editor.enablePreview": false,
         "workbench.editor.enablePreviewFromQuickOpen": false,
-        
         // Giảm file scanning
         "files.maxMemoryForLargeFilesMB": 512,
         "search.maxResults": 1000,
         "search.maintainFileSearchCache": false,
-        
         // Tối ưu terminal
         "terminal.integrated.gpuAcceleration": "off",
         "terminal.integrated.rendererType": "dom",
-        
         // Giảm suggestion delay
         "editor.quickSuggestionsDelay": 1000,
         "editor.acceptSuggestionOnCommitCharacter": false,
         "editor.parameterHints.enabled": false,
         "editor.hover.enabled": false,
-        
         // Disable Copilot temporarily
         "github.copilot.enable": {
             "*": false,
@@ -90,12 +82,39 @@
             "scminput": false,
             "python": true
         },
-        "files.autoSave": "off"
+        "files.autoSave": "off",
+        // Python settings
+        "python.defaultInterpreterPath": "./migrate/.venv/Scripts/python.exe",
+        "python.formatting.provider": "autopep8",
+        "python.formatting.autopep8Args": [
+            "--max-line-length=120",
+            "--indent-size=2"
+        ],
+        "python.linting.enabled": true,
+        "python.linting.pycodestyleEnabled": true,
+        "python.linting.pycodestyleArgs": [
+            "--max-line-length=120",
+            "--ignore=E501,W503"
+        ],
+        "editor.formatOnSave": true,
+        "editor.formatOnType": false,
+        "python.analysis.typeCheckingMode": "basic",
+        // Format on save for Python files
+        "[python]": {
+            "editor.formatOnSave": true,
+            "editor.codeActionsOnSave": {
+                "source.organizeImports": "explicit"
+            },
+            "editor.tabSize": 2,
+            "editor.insertSpaces": true
+        }
     },
     "extensions": {
-        "recommendations": [],
-        "unwantedRecommendations": [
+        "recommendations": [
             "ms-python.python",
+            "ms-python.autopep8"
+        ],
+        "unwantedRecommendations": [
             "ms-vscode.vscode-typescript-next"
         ]
     }

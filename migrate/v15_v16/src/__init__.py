@@ -16,7 +16,7 @@ from .config_generator import OdooConfigGenerator
 
 __all__ = [
     'get_config',
-    'Config', 
+    'Config',
     'setup_logging',
     'DockerManager',
     'HealthChecker',

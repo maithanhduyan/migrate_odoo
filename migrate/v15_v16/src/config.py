@@ -71,10 +71,10 @@ class Config(BaseModel):
         """Load configuration from JSON file"""
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
-        
+
         with open(config_path, "r", encoding="utf-8") as f:
             config_data = json.load(f)
-        
+
         return cls(**config_data)
 
     @property

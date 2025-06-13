@@ -18,7 +18,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 
 class ColoredFormatter(logging.Formatter):
     """Custom formatter with colors for different log levels"""
-    
+
     COLORS = {
         'DEBUG': '\033[36m',      # Cyan
         'INFO': '\033[32m',       # Green
@@ -38,10 +38,10 @@ def setup_logging(log_level: str = "INFO", log_file: Optional[str] = None) -> lo
     """Setup logging configuration"""
     logger = logging.getLogger("odoo_migration")
     logger.setLevel(getattr(logging, log_level.upper()))
-    
+
     # Clear existing handlers
     logger.handlers.clear()
-    
+
     # Console handler
     console_handler = logging.StreamHandler()
     console_formatter = ColoredFormatter(
@@ -49,7 +49,7 @@ def setup_logging(log_level: str = "INFO", log_file: Optional[str] = None) -> lo
     )
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
-    
+
     # File handler
     if log_file:
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -59,19 +59,19 @@ def setup_logging(log_level: str = "INFO", log_file: Optional[str] = None) -> lo
         )
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
-    
+
     return logger
 
 
 class DockerManager:
     """Manager for Docker operations"""
-    
+
     def __init__(self):
         try:
             self.client = docker.from_env()
         except Exception as e:
             raise RuntimeError(f"Failed to connect to Docker: {e}")
-    
+
     def is_container_running(self, container_name: str) -> bool:
         """Check if container is running"""
         try:
@@ -81,7 +81,7 @@ class DockerManager:
             return False
         except Exception:
             return False
-    
+
     def get_container_status(self, container_name: str) -> Optional[str]:
         """Get container status"""
         try:
@@ -91,7 +91,7 @@ class DockerManager:
             return None
         except Exception:
             return None
-    
+
     def get_container_logs(self, container_name: str, tail: int = 10) -> List[str]:
         """Get container logs"""
         try:
@@ -100,7 +100,7 @@ class DockerManager:
             return logs.strip().split('\n') if logs else []
         except Exception:
             return []
-    
+
     def get_container_ports(self, container_name: str) -> Dict[str, Any]:
         """Get container port mappings"""
         try:
@@ -108,7 +108,7 @@ class DockerManager:
             return container.attrs.get('NetworkSettings', {}).get('Ports', {})
         except Exception:
             return {}
-    
+
     def network_exists(self, network_name: str) -> bool:
         """Check if Docker network exists"""
         try:
@@ -118,7 +118,7 @@ class DockerManager:
             return False
         except Exception:
             return False
-    
+
     def create_network(self, network_name: str) -> bool:
         """Create Docker network"""
         try:
@@ -126,7 +126,7 @@ class DockerManager:
             return True
         except Exception:
             return False
-    
+
     def ping_container(self, from_container: str, to_container: str) -> bool:
         """Test network connectivity between containers"""
         try:
@@ -139,11 +139,11 @@ class DockerManager:
 
 class HealthChecker:
     """Health checker for services"""
-    
+
     def __init__(self, docker_manager: DockerManager, logger: logging.Logger):
         self.docker = docker_manager
         self.logger = logger
-    
+
     def check_web_service(self, url: str, timeout: int = 10) -> Tuple[bool, Optional[int]]:
         """Check if web service is accessible"""
         try:
@@ -151,7 +151,7 @@ class HealthChecker:
             return True, response.status_code
         except requests.exceptions.RequestException:
             return False, None
-    
+
     def check_database_connection(self, container_name: str, db_config: Dict[str, Any]) -> bool:
         """Check database connection from container"""
         try:
@@ -161,7 +161,7 @@ class HealthChecker:
             return result.exit_code == 0
         except Exception:
             return False
-    
+
     def check_postgresql_ready(self, container_name: str, user: str) -> bool:
         """Check if PostgreSQL is ready for connections"""
         try:
@@ -174,14 +174,14 @@ class HealthChecker:
 
 class PortChecker:
     """Port availability checker"""
-    
+
     @staticmethod
     def is_port_in_use(port: int) -> bool:
         """Check if port is in use"""
         import socket
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             return s.connect_ex(('localhost', port)) == 0
-    
+
     @staticmethod
     def get_port_usage(ports: List[int]) -> Dict[int, bool]:
         """Get usage status for multiple ports"""
@@ -190,58 +190,58 @@ class PortChecker:
 
 class ReportGenerator:
     """Generate health check reports"""
-    
+
     def __init__(self, console: Console):
         self.console = console
-    
+
     def generate_summary_table(self, results: Dict[str, Any]) -> Table:
         """Generate summary table"""
         table = Table(title="🔍 Environment Health Check Summary")
         table.add_column("Component", style="cyan", no_wrap=True)
         table.add_column("Status", justify="center")
         table.add_column("Details", style="dim")
-        
+
         # Add rows based on results
         for component, data in results.items():
             if isinstance(data, dict) and 'status' in data:
                 status_emoji = "✅" if data['status'] else "❌"
                 status_text = "OK" if data['status'] else "FAILED"
                 details = data.get('details', '')
-                
+
                 table.add_row(
                     component,
                     f"{status_emoji} {status_text}",
                     details
                 )
-        
+
         return table
-    
+
     def generate_port_table(self, port_usage: Dict[int, bool]) -> Table:
         """Generate port usage table"""
         table = Table(title="🚪 Port Usage")
         table.add_column("Port", style="cyan")
         table.add_column("Status", justify="center")
         table.add_column("Service", style="dim")
-        
+
         service_map = {
             5432: "PostgreSQL",
             8069: "Odoo v15 Web",
-            8016: "Odoo v16 Web", 
+            8016: "Odoo v16 Web",
             8172: "Odoo v15 Longpolling",
             8272: "Odoo v16 Longpolling"
         }
-        
+
         for port, in_use in port_usage.items():
             status = "🟢 In Use" if in_use else "🔴 Available"
             service = service_map.get(port, "Unknown")
             table.add_row(str(port), status, service)
-        
+
         return table
-    
+
     def show_health_score(self, score: int, max_score: int):
         """Show health score with color coding"""
         percentage = (score / max_score) * 100 if max_score > 0 else 0
-        
+
         if percentage >= 90:
             color = "green"
             status = "EXCELLENT - Ready for migration!"
@@ -258,14 +258,14 @@ class ReportGenerator:
             color = "red"
             status = "POOR - Major issues must be resolved"
             emoji = "🔴"
-        
+
         panel = Panel(
             f"{emoji} Health Score: {score}/{max_score} ({percentage:.1f}%)\n"
             f"Status: {status}",
             title="📊 Overall Health",
             border_style=color
         )
-        
+
         self.console.print(panel)
 
 
@@ -293,3 +293,47 @@ def ensure_directory(path: str):
 def get_timestamp() -> str:
     """Get current timestamp string"""
     return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def check_container_running(container_name: str) -> bool:
+    """Kiểm tra container có đang chạy không"""
+    try:
+        client = docker.from_env()
+        container = client.containers.get(container_name)
+        return container.status == 'running'
+    except docker.errors.NotFound:
+        return False
+    except Exception:
+        return False
+
+
+def check_database_connection(db_config) -> bool:
+    """Kiểm tra kết nối database"""
+    try:
+        import psycopg2
+        # Thử kết nối với localhost trước (từ bên ngoài container)
+        try:
+            conn = psycopg2.connect(
+                host='localhost',
+                port=db_config.port,
+                user=db_config.user,
+                password=db_config.password,
+                database='postgres',
+                connect_timeout=10
+            )
+            conn.close()
+            return True
+        except psycopg2.OperationalError:
+            # Nếu localhost không được, thử với host config
+            conn = psycopg2.connect(
+                host=db_config.host,
+                port=db_config.port,
+                user=db_config.user,
+                password=db_config.password,
+                database='postgres',
+                connect_timeout=10
+            )
+            conn.close()
+            return True
+    except Exception:
+        return False
