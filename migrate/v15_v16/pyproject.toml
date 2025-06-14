@@ -19,6 +19,9 @@ health-check = "main:health_check_entry"
 check = "main:check_entry"
 delete-db = "main:delete_db_entry"
 create-demo = "main:create_demo_entry"
+config-generate = "main:config_generate_entry"
+config-sync = "main:config_generate_entry"
+
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

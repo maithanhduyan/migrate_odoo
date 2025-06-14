@@ -88,11 +88,17 @@ class OdooConfigGenerator:
     def generate_odoo_v15_config(self) -> str:
         """Generate optimized Odoo v15 configuration from config.json"""
         v15_config = self.config['odoo_v15']['config'].copy()
-        # Merge database configuration - use container hostname for Docker
         db_config = self.config['postgresql']
+
+        # Use db_host from odoo config if available, otherwise use postgresql for Docker
+        db_host = v15_config.get('db_host', 'postgresql')
+        if db_host == 'localhost':
+            db_host = 'postgresql'  # Container hostname for Docker environment
+
+        # Merge database configuration
         merged_config = {
             **v15_config,
-            'db_host': 'postgresql',  # Container hostname for Docker environment
+            'db_host': db_host,
             'db_port': db_config['port'],
             'db_user': db_config['user'],
             'db_password': db_config['password'],
@@ -109,11 +115,17 @@ class OdooConfigGenerator:
     def generate_odoo_v16_config(self) -> str:
         """Generate optimized Odoo v16 configuration from config.json"""
         v16_config = self.config['odoo_v16']['config'].copy()
-        # Merge database configuration - use container hostname for Docker
         db_config = self.config['postgresql']
+
+        # Use db_host from odoo config if available, otherwise use postgresql for Docker
+        db_host = v16_config.get('db_host', 'postgresql')
+        if db_host == 'localhost':
+            db_host = 'postgresql'  # Container hostname for Docker environment
+
+        # Merge database configuration
         merged_config = {
             **v16_config,
-            'db_host': 'postgresql',  # Container hostname for Docker environment
+            'db_host': db_host,
             'db_port': db_config['port'],
             'db_user': db_config['user'],
             'db_password': db_config['password'],
@@ -432,177 +444,6 @@ class OdooConfigGenerator:
         """Show configuration generation summary (kept for compatibility)"""
         self.compare_configs()
 
-    def generate_odoo_v15_config(self) -> str:
-        """Generate optimized Odoo v15 configuration"""
-        v15_config = self.config['odoo_v15']['config']
-        db_config = self.config['postgresql']
-
-        config_content = f"""[options]
-# ========================================
-# Odoo v15 Configuration (Auto-generated)
-# ========================================
-
-# Addons Configuration
-addons_path = {v15_config['addons_path']}
-
-# Database Configuration
-db_host = postgresql
-db_port = {db_config['port']}
-db_user = {db_config['user']}
-db_password = {db_config['password']}
-db_name =
-db_maxconn = 64
-db_sslmode = prefer
-db_template = template0
-
-# Server Configuration
-http_enable = True
-http_interface =
-http_port = {v15_config['http_port']}
-longpolling_port = {v15_config['longpolling_port']}
-proxy_mode = {str(v15_config['proxy_mode']).lower()}
-
-# Performance Configuration
-workers = {v15_config['workers']}
-max_cron_threads = {v15_config['max_cron_threads']}
-limit_memory_hard = {v15_config['limit_memory_hard']}
-limit_memory_soft = {v15_config['limit_memory_soft']}
-limit_request = {v15_config['limit_request']}
-limit_time_cpu = {v15_config['limit_time_cpu']}
-limit_time_real = {v15_config['limit_time_real']}
-limit_time_real_cron = {v15_config['limit_time_real_cron']}
-
-# Logging Configuration
-log_level = {v15_config['log_level']}
-log_handler = {v15_config['log_handler']}
-logfile = {v15_config['logfile']}
-log_db = False
-log_db_level = warning
-
-# Data Configuration
-data_dir = {v15_config['data_dir']}
-csv_internal_sep = ,
-
-# Security Configuration
-admin_passwd = $pbkdf2-sha512$600000$Ruids3YOYaxVqpVyTglhjA$1nMppBRqU464.rSo4NhtOkWbIEtvh0uWHI/w.nt3g5ckmlZG24OXVdn7XRWVQeUeY6houab7uU81uRX9upb.Eg
-
-# Database Management
-list_db = {str(v15_config['list_db']).lower()}
-dbfilter =
-
-# Server Wide Modules
-server_wide_modules = {v15_config['server_wide_modules']}
-
-# Email Configuration
-email_from = False
-smtp_server = localhost
-smtp_port = 25
-smtp_ssl = False
-smtp_password = False
-
-# Misc Configuration
-demo = {{}}
-import_partial =
-osv_memory_age_limit = False
-osv_memory_count_limit = False
-reportgz = False
-"""
-        return config_content.strip()
-
-    def generate_odoo_v16_config(self) -> str:
-        """Generate optimized Odoo v16 configuration"""
-        v16_config = self.config['odoo_v16']['config']
-        db_config = self.config['postgresql']
-
-        config_content = f"""[options]
-# ========================================
-# Odoo v16 Configuration (Auto-generated)
-# ========================================
-
-# Addons Configuration
-addons_path = {v16_config['addons_path']}
-
-# Database Configuration
-db_host = postgresql
-db_port = {db_config['port']}
-db_user = {db_config['user']}
-db_password = {db_config['password']}
-db_name =
-db_maxconn = 64
-db_sslmode = prefer
-db_template = template0
-
-# Server Configuration
-http_enable = True
-http_interface =
-http_port = {v16_config['http_port']}
-longpolling_port = {v16_config['longpolling_port']}
-proxy_mode = {str(v16_config['proxy_mode']).lower()}
-
-# Performance Configuration
-workers = {v16_config['workers']}
-max_cron_threads = {v16_config['max_cron_threads']}
-limit_memory_hard = {v16_config['limit_memory_hard']}
-limit_memory_soft = {v16_config['limit_memory_soft']}
-limit_request = {v16_config['limit_request']}
-limit_time_cpu = {v16_config['limit_time_cpu']}
-limit_time_real = {v16_config['limit_time_real']}
-limit_time_real_cron = {v16_config['limit_time_real_cron']}
-
-# Logging Configuration
-log_level = {v16_config['log_level']}
-log_handler = {v16_config['log_handler']}
-logfile = {v16_config['logfile']}
-log_db = False
-log_db_level = warn
-
-# Data Configuration
-data_dir = {v16_config['data_dir']}
-csv_internal_sep = ,
-
-# Security Configuration (v16 enhanced)
-admin_passwd = $pbkdf2-sha512$600000$CuFcay3lPCeEMCakNEaIMQ$3O5IF486YA41FGlaubRSzrvJpVu59iTvBzHpyzG/PL9BBfzXc3Lb4DdZfJ2TV6/YVHuyFMg/T5bFBoB3Sf/sOg
-session_cookie_secure = {str(v16_config['session_cookie_secure']).lower()}
-session_cookie_httponly = {str(v16_config['session_cookie_httponly']).lower()}
-
-# Database Management
-list_db = {str(v16_config['list_db']).lower()}
-dbfilter =
-
-# Server Wide Modules
-server_wide_modules = {v16_config['server_wide_modules']}
-
-# Email Configuration
-email_from = False
-smtp_server = localhost
-smtp_port = 25
-smtp_ssl = False
-smtp_password = False
-
-# Misc Configuration
-demo = {{}}
-import_partial =
-osv_memory_age_limit = False
-osv_memory_count_limit = False
-reportgz = False
-"""
-        return config_content.strip()
-
-    def backup_existing_config(self, config_path: Path) -> Path:
-        """Backup existing configuration file"""
-        if config_path.exists():
-            backup_path = config_path.with_suffix('.conf.backup')
-
-            # Remove existing backup if exists
-            if backup_path.exists():
-                backup_path.unlink()
-                self.logger.info(f"Removed existing backup: {backup_path}")
-
-            config_path.rename(backup_path)
-            self.logger.info(f"Backed up existing config to: {backup_path}")
-            return backup_path
-        return None
-
     def write_config_file(self, config_content: str, config_path: Path, service_name: str):
         """Write configuration content to file"""
         try:
@@ -626,27 +467,6 @@ reportgz = False
                 f"❌ Failed to write {service_name} config: {e}", style="red")
             self.logger.error(f"Failed to write {service_name} config: {e}")
             raise
-
-    def generate_all_configs(self):
-        """Generate all Odoo configuration files"""
-        self.console.print(Panel(
-            "Generating optimized Odoo configuration files from config.json",
-            title="🔧 Config Generator",
-            border_style="cyan"
-        ))
-
-        # Generate Odoo v15 config
-        v15_content = self.generate_odoo_v15_config()
-        v15_path = self.config.get_config_path('odoo_v15')
-        self.write_config_file(v15_content, v15_path, "Odoo v15")
-
-        # Generate Odoo v16 config
-        v16_content = self.generate_odoo_v16_config()
-        v16_path = self.config.get_config_path('odoo_v16')
-        self.write_config_file(v16_content, v16_path, "Odoo v16")
-
-        # Show summary
-        self.show_config_summary()
 
     def show_config_summary(self):
         """Show configuration generation summary"""

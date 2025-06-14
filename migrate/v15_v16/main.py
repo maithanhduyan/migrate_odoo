@@ -1942,14 +1942,37 @@ def _display_uninstallation_results(console: Console, result: Dict[str, Any]) ->
     # Success modules
     if result.get('uninstalled_modules'):
         console.print(
-            f"\n✅ Successfully uninstalled: {', '.join(result['uninstalled_modules'])}", style="green")
-
-    # Failed modules
+            f"\n✅ Successfully uninstalled: {', '.join(result['uninstalled_modules'])}", style="green")    # Failed modules
     if result.get('failed_modules'):
         console.print(
             f"\n❌ Failed to uninstall: {', '.join(result['failed_modules'])}", style="red")
         if result.get('error'):
             console.print(f"Error: {result['error']}", style="dim red")
+
+
+def config_generate_entry():
+    """Entry point for config generation script"""
+    import os
+    from pathlib import Path
+    from src.config_generator import OdooConfigGenerator
+    from src.config import load_config
+
+    # Change to the script directory to find config.json
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(script_dir)
+
+        # Load config and create generator
+        config = load_config()
+        generator = OdooConfigGenerator(config)
+        generator.sync_all_configs()
+
+    finally:
+        # Restore original working directory
+        os.chdir(original_cwd)
+    generator.sync_all_configs()
 
 
 if __name__ == "__main__":

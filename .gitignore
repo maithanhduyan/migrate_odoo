@@ -36,6 +36,7 @@ __pycache__/
 
 # Odoo configuration backup files
 *.conf.backup
+*.conf.backup_*
 *.conf.bak
 *.conf.orig
 
@@ -553,6 +554,7 @@ config.json
 # General backup files
 *.bak
 *.backup
+*.backup_*
 *.old
 *.orig
 *.tmp
