@@ -28,6 +28,7 @@ requires-python = ">=3.10"
 # Core migration tools - simplified
 migrate-v15-v16 = "migrate.v15_v16.main:cli"
 postgres-mcp = "pg_mcp.src.server:main"
+docker-mcp = "docker_mcp.src.server:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -36,7 +37,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = [
     "migrate",
-    "pg_mcp"
+    "pg_mcp",
+    "docker_mcp"
 ]
 
 [tool.uv]
@@ -52,7 +54,8 @@ dev-dependencies = [
 [tool.uv.workspace]
 members = [
     "migrate/v15_v16",
-    "pg_mcp"
+    "pg_mcp",
+    "docker_mcp"
 ]
 
 # Tool configurations

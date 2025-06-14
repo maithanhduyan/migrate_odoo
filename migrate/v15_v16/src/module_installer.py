@@ -14,14 +14,13 @@ import requests
 from typing import List, Dict, Any
 from pathlib import Path
 
-from .config import Config
 from .utils import setup_logging
 
 
 class OdooModuleInstaller:
     """Class quản lý cài đặt modules Odoo qua command line"""
 
-    def __init__(self, config: Config):
+    def __init__(self, config):
         self.config = config
         self.logger = setup_logging()
 
@@ -346,13 +345,13 @@ class OdooModuleInstaller:
             import psycopg2
 
             # Use localhost instead of container name when connecting from host
-            host = 'localhost' if self.config.postgresql.host == 'postgresql' else self.config.postgresql.host
+            host = 'localhost' if self.config['postgresql']['host'] == 'postgresql' else self.config['postgresql']['host']
 
             conn = psycopg2.connect(
                 host=host,
-                port=self.config.postgresql.port,
-                user=self.config.postgresql.user,
-                password=self.config.postgresql.password,
+                port=self.config['postgresql']['port'],
+                user=self.config['postgresql']['user'],
+                password=self.config['postgresql']['password'],
                 database='postgres'
             )
 
@@ -376,14 +375,14 @@ class OdooModuleInstaller:
             import psycopg2
 
             # Use localhost instead of container name when connecting from host
-            host = 'localhost' if self.config.postgresql.host == 'postgresql' else self.config.postgresql.host
+            host = 'localhost' if self.config['postgresql']['host'] == 'postgresql' else self.config['postgresql']['host']
 
             # Terminate all connections to the database
             conn = psycopg2.connect(
                 host=host,
-                port=self.config.postgresql.port,
-                user=self.config.postgresql.user,
-                password=self.config.postgresql.password,
+                port=self.config['postgresql']['port'],
+                user=self.config['postgresql']['user'],
+                password=self.config['postgresql']['password'],
                 database='postgres'
             )
 

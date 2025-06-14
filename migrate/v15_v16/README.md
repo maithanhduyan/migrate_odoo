@@ -34,16 +34,22 @@ python main.py health-check --detailed --fix
 ### Commands chính
 ```bash
 # Kiểm tra môi trường
-python main.py health-check [--detailed] [--fix]
+uv run --project migrate/v15_v16 migrate health-check
 
 # Trạng thái tổng quan  
-python main.py status
+
 
 # Thông tin cấu hình
-python main.py info
+uv run --project migrate/v15_v16 migrate info
 
-# Setup databases (Coming Soon)
-python main.py setup-db
+# Quản lý Database
+uv run --project migrate/v15_v16 create-demo 
+uv run --project migrate/v15_v16 delete-db 
+
+# Quản lý Module/App  
+python main.py install-app --db-name demo_test_v15 --modules sale,purchase,crm --version 15
+python main.py uninstall-app --db-name demo_test_v15 --modules sale --version 15
+python main.py list-apps --db-name demo_test_v15 --version 15
 
 # Phân tích database (Coming Soon)  
 python main.py analyze-db
@@ -129,3 +135,53 @@ migrate/v15_v16/
 - **Docker & Docker Compose** 
 - **UV package manager**
 - **Môi trường ảo tại:** `migrate\.venv`
+
+## 🛠️ Troubleshooting
+
+### ⚠️ Registry Issues sau khi cài Module
+
+**Vấn đề:** Lỗi `KeyError: 'model_name'` trên web sau khi cài module qua CLI
+```
+KeyError: 'crm.team'
+KeyError: 'payment.transaction'
+```
+
+**Nguyên nhân:** 
+- Odoo registry không được refresh sau khi cài module via CLI
+- Container Odoo cần restart để load lại registry với các model mới
+- Đây là limitation của việc cài module qua `-i` thay vì web interface
+
+**Giải pháp:**
+```bash
+# 1. Restart container Odoo để load lại registry
+docker restart odoo_15
+
+# 2. Chờ container khởi động hoàn tất (30-60s)
+docker logs odoo_15 --tail 20
+
+# 3. Xác nhận registry đã được load: 
+# Log sẽ hiển thị: "Registry loaded in X.XXXs"
+```
+
+**Tự động hóa:**
+CLI commands đã được cập nhật để tự động restart container sau khi cài module:
+```bash
+python main.py install-app --db-name demo_test_v15 --modules crm --version 15
+# ✅ Tự động restart container sau khi cài
+```
+
+### 🔍 Debug Registry Issues
+
+```bash
+# Kiểm tra model có tồn tại trong database
+docker exec postgresql psql -U odoo -d odoo_demo_v15 -c "SELECT model FROM ir_model WHERE model = 'crm.team';"
+
+# Kiểm tra bảng có tồn tại
+docker exec postgresql psql -U odoo -d odoo_demo_v15 -c "\dt crm_team"
+
+# Kiểm tra trạng thái module
+docker exec postgresql psql -U odoo -d odoo_demo_v15 -c "SELECT name, state FROM ir_module_module WHERE name = 'crm';"
+
+# Kiểm tra log container
+docker logs odoo_15 --tail 50
+```

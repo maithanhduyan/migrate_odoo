@@ -126,11 +126,11 @@ def check_database_connection(db_config) -> bool:
         True if connection successful
     """
     # Try using psql command (simpler than psycopg2 dependency)
-    cmd = f"psql -h {db_config.host} -p {db_config.port} -U {db_config.user} -d postgres -c '\\l'"
+    cmd = f"psql -h {db_config['host']} -p {db_config['port']} -U {db_config['user']} -d postgres -c '\\l'"
 
     # Set password via environment variable
     env = os.environ.copy()
-    env['PGPASSWORD'] = db_config.password
+    env['PGPASSWORD'] = db_config['password']
 
     try:
         result = subprocess.run(

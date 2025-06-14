@@ -18,7 +18,6 @@ import psycopg2
 import requests
 import docker
 
-from .config import Config
 from .utils import (
     check_container_running,
     check_database_connection,
@@ -31,7 +30,7 @@ from .module_installer import OdooModuleInstaller
 class DatabaseSetup:
     """Class quản lý việc tạo và setup database demo"""
 
-    def __init__(self, config: Config):
+    def __init__(self, config):
         self.config = config
         self.logger = setup_logging()
         self.docker_manager = DockerManager()
@@ -47,8 +46,8 @@ class DatabaseSetup:
         self.logger.info("🚀 Bắt đầu setup demo databases cho v15 và v16...")
 
         results = {
-            'v15': {'status': 'pending', 'database': self.config.migration.demo_database_v15},
-            'v16': {'status': 'pending', 'database': self.config.migration.demo_database_v16},
+            'v15': {'status': 'pending', 'database': self.config['migration']['demo_database_v15']},
+            'v16': {'status': 'pending', 'database': self.config['migration']['demo_database_v16']},
             'summary': {}
         }
 
@@ -80,7 +79,7 @@ class DatabaseSetup:
         self.logger.info("🔧 Chuẩn bị môi trường...")
 
         # Kiểm tra PostgreSQL
-        if not check_database_connection(self.config.postgresql):
+        if not check_database_connection(self.config['postgresql']):
             raise Exception("PostgreSQL không kết nối được")
 
         self.logger.info("✅ PostgreSQL sẵn sàng")
@@ -97,7 +96,7 @@ class DatabaseSetup:
         """
         result = {
             'status': 'in_progress',
-            'database': getattr(self.config.migration, f'demo_database_{version}'),
+            'database': self.config['migration'][f'demo_database_{version}'],
             'version': version,
             'modules_installed': [],
             'demo_data_added': False,
@@ -106,7 +105,7 @@ class DatabaseSetup:
 
         try:
             database_name = result['database']
-            odoo_config = getattr(self.config, f'odoo_{version}')
+            odoo_config = self.config[f'odoo_{version}']
 
             self.logger.info(f"🏗️ Tạo database {database_name} cho {version}")
 
@@ -117,15 +116,15 @@ class DatabaseSetup:
             self._start_odoo_container(version)
 
             # 3. Chờ Odoo sẵn sàng (tăng timeout lên 240s)
-            self._wait_for_odoo_ready(odoo_config.web_url, timeout=240)
+            self._wait_for_odoo_ready(odoo_config['web_url'], timeout=240)
 
             # 4. Tạo Odoo database với demo data
             self._create_odoo_database(
-                odoo_config.web_url, database_name, version)
+                odoo_config['web_url'], database_name, version)
 
             # 5. Cài đặt modules Odoo CE
             installed_modules = self._install_odoo_modules(
-                odoo_config.web_url, database_name, version)
+                odoo_config['web_url'], database_name, version)
             result['modules_installed'] = installed_modules
 
             # 6. Thêm demo data nâng cao (optional)
@@ -149,10 +148,10 @@ class DatabaseSetup:
         try:
             # Kết nối đến PostgreSQL
             conn = psycopg2.connect(
-                host='localhost',
-                port=self.config.postgresql.port,
-                user=self.config.postgresql.user,
-                password=self.config.postgresql.password,
+                host=self.config['postgresql']['host'],
+                port=self.config['postgresql']['port'],
+                user=self.config['postgresql']['user'],
+                password=self.config['postgresql']['password'],
                 database='postgres'
             )
             conn.autocommit = True
@@ -179,19 +178,21 @@ class DatabaseSetup:
 
     def _start_odoo_container(self, version: str) -> None:
         """Khởi động Odoo container"""
-        odoo_config = getattr(self.config, f'odoo_{version}')
+        odoo_config = self.config[f'odoo_{version}']
 
         # Kiểm tra container đã chạy chưa
-        if check_container_running(odoo_config.container_name):
-            self.logger.info(f"Container {odoo_config.container_name} đã chạy")
+        if check_container_running(odoo_config['container_name']):
+            self.logger.info(
+                f"Container {odoo_config['container_name']} đã chạy")
             return        # Khởi động container từ docker-compose
         # TODO: Implement container start logic
-        self.logger.info(f"Starting container {odoo_config.container_name}...")
+        self.logger.info(
+            f"Starting container {odoo_config['container_name']}...")
 
         # For now, assume container is already running
-        if not check_container_running(odoo_config.container_name):
+        if not check_container_running(odoo_config['container_name']):
             self.logger.warning(
-                f"Container {odoo_config.container_name} is not running. Please start it manually.")
+                f"Container {odoo_config['container_name']} is not running. Please start it manually.")
 
         # Chờ container khởi động
         time.sleep(15)
@@ -367,8 +368,7 @@ class DatabaseSetup:
 
     def _check_single_database(self, version: str) -> Dict[str, Any]:
         """Kiểm tra một database cụ thể"""
-        database_name = getattr(self.config.migration,
-                                f'demo_database_{version}')
+        database_name = self.config['migration'][f'demo_database_{version}']
 
         result = {
             'database': database_name,
@@ -382,10 +382,10 @@ class DatabaseSetup:
         try:
             # Kiểm tra database tồn tại trong PostgreSQL
             conn = psycopg2.connect(
-                host='localhost',
-                port=self.config.postgresql.port,
-                user=self.config.postgresql.user,
-                password=self.config.postgresql.password,
+                host=self.config['postgresql']['host'],
+                port=self.config['postgresql']['port'],
+                user=self.config['postgresql']['user'],
+                password=self.config['postgresql']['password'],
                 database='postgres'
             )
 
@@ -400,10 +400,10 @@ class DatabaseSetup:
 
             if result['exists']:
                 # Kiểm tra Odoo có truy cập được không
-                odoo_config = getattr(self.config, f'odoo_{version}')
+                odoo_config = self.config[f'odoo_{version}']
                 try:
                     response = requests.get(
-                        f"{odoo_config.web_url}/web/database/selector", timeout=10)
+                        f"{odoo_config['web_url']}/web/database/selector", timeout=10)
                     result['odoo_accessible'] = response.status_code == 200
                 except BaseException:
                     result['odoo_accessible'] = False
@@ -423,10 +423,10 @@ class DatabaseSetup:
         try:
             # Kết nối trực tiếp đến database để đếm modules
             conn = psycopg2.connect(
-                host='localhost',
-                port=self.config.postgresql.port,
-                user=self.config.postgresql.user,
-                password=self.config.postgresql.password,
+                host=self.config['postgresql']['host'],
+                port=self.config['postgresql']['port'],
+                user=self.config['postgresql']['user'],
+                password=self.config['postgresql']['password'],
                 database=database_name
             )
 
@@ -456,8 +456,7 @@ class DatabaseSetup:
 
     def _cleanup_single_database(self, version: str, force: bool = False) -> Dict[str, Any]:
         """Dọn dẹp một database cụ thể"""
-        database_name = getattr(self.config.migration,
-                                f'demo_database_{version}')
+        database_name = self.config['migration'][f'demo_database_{version}']
 
         result = {
             'database': database_name,
@@ -469,10 +468,10 @@ class DatabaseSetup:
         try:
             # Kiểm tra database có tồn tại không
             conn = psycopg2.connect(
-                host='localhost',
-                port=self.config.postgresql.port,
-                user=self.config.postgresql.user,
-                password=self.config.postgresql.password,
+                host=self.config['postgresql']['host'],
+                port=self.config['postgresql']['port'],
+                user=self.config['postgresql']['user'],
+                password=self.config['postgresql']['password'],
                 database='postgres'
             )
             conn.autocommit = True
@@ -569,9 +568,9 @@ class DatabaseSetup:
         try:
             # Xác định container dựa trên version
             if version == 'v15':
-                container_name = self.config.odoo_v15.container_name
+                container_name = self.config['odoo_v15']['container_name']
             elif version == 'v16':
-                container_name = self.config.odoo_v16.container_name
+                container_name = self.config['odoo_v16']['container_name']
             else:
                 raise ValueError(f"Unsupported version: {version}")
 
@@ -642,10 +641,10 @@ class DatabaseSetup:
 
             # Kết nối đến database vừa tạo
             conn = psycopg2.connect(
-                host='localhost',
-                port=self.config.postgresql.port,
-                user=self.config.postgresql.user,
-                password=self.config.postgresql.password,
+                host=self.config['postgresql']['host'],
+                port=self.config['postgresql']['port'],
+                user=self.config['postgresql']['user'],
+                password=self.config['postgresql']['password'],
                 database=database_name
             )
 

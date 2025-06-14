@@ -5,11 +5,11 @@ Main entry point for Odoo Migration v15 to v16
 This script provides a CLI interface for managing the entire migration process
 from Odoo v15 to v16, including health checks, database setup, analysis, and migration.
 """
-from src.config_generator import OdooConfigGenerator
-from src.health import OdooMigrationHealthChecker
 from src.config import get_config
-import os
+from src.health import OdooMigrationHealthChecker
+from src.config_generator import OdooConfigGenerator
 import sys
+import os
 import click
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
@@ -114,8 +114,8 @@ def setup_db(ctx, version, force, modules_only):
         f"Version: [cyan]{version}[/cyan]\n"
         f"Force recreate: [cyan]{force}[/cyan]\n"
         f"Modules only: [cyan]{modules_only}[/cyan]\n"
-        f"V15 Database: [green]{config.migration.demo_database_v15}[/green]\n"
-        f"V16 Database: [green]{config.migration.demo_database_v16}[/green]",
+        f"V15 Database: [green]{config['migration']['demo_database_v15']}[/green]\n"
+        f"V16 Database: [green]{config['migration']['demo_database_v16']}[/green]",
         title="📦 Setup Configuration"
     ))
 
@@ -205,10 +205,10 @@ def status(ctx):
     config = ctx.obj['config']
 
     console.print(Panel(
-        f"Project: {config.project.name}\n"
-        f"Version: {config.project.version}\n"
-        f"Workspace: {config.workspace_path}\n"
-        f"Network: {config.environment.docker_network}",
+        f"Project: {config['project']['name']}\n"
+        f"Version: {config['project']['version']}\n"
+        f"Workspace: {config['workspace_path']}\n"
+        f"Network: {config['environment']['docker_network']}",
         title="📊 Migration Status",
         border_style="blue"
     ))
@@ -220,9 +220,9 @@ def status(ctx):
         docker = DockerManager()
 
         containers = [
-            config.postgresql.container_name,
-            config.odoo_v15.container_name,
-            config.odoo_v16.container_name
+            config['postgresql']['container_name'],
+            config['odoo_v15']['container_name'],
+            config['odoo_v16']['container_name']
         ]
 
         for container in containers:
@@ -251,25 +251,25 @@ def info(ctx):
 
     # Project info
     console.print(Panel(
-        f"Name: {config.project.name}\n"
-        f"Version: {config.project.version}\n"
-        f"Workspace: {config.workspace_path}",
+        f"Name: {config['project']['name']}\n"
+        f"Version: {config['project']['version']}\n"
+        f"Workspace: {config['workspace_path']}",
         title="📦 Project Information",
         border_style="blue"
     ))
 
     # Service URLs
     console.print(Panel(
-        f"Odoo v15: {config.odoo_v15.web_url}\n"
-        f"Odoo v16: {config.odoo_v16.web_url}\n"
-        f"PostgreSQL: {config.postgresql.host}:{config.postgresql.port}",
+        f"Odoo v15: {config['odoo_v15']['web_url']}\n"
+        f"Odoo v16: {config['odoo_v16']['web_url']}\n"
+        f"PostgreSQL: {config['postgresql']['host']}:{config['postgresql']['port']}",
         title="🌐 Service URLs",
         border_style="green"
     ))
 
     # Migration phases
     phases_text = "\n".join(
-        [f"  {i + 1}. {phase}" for i, phase in enumerate(config.migration.migration_phases)])
+        [f"  {i + 1}. {phase}" for i, phase in enumerate(config['migration']['migration_phases'])])
     console.print(Panel(
         phases_text,
         title="📋 Migration Phases",
@@ -280,29 +280,52 @@ def info(ctx):
 @cli.command()
 @click.option('--validate', '-v', is_flag=True, help='Validate generated configurations')
 @click.option('--backup', '-b', is_flag=True, default=True, help='Backup existing configs')
+@click.option('--sync', '-s', is_flag=True, help='Full synchronization mode (recommended)')
 @click.pass_context
-def config_generate(ctx, validate, backup):
+def config_generate(ctx, validate, backup, sync):
     """
     🔧 Generate optimized Odoo configurations
 
     Generates clean, optimized odoo.conf files from config.json settings.
     Automatically backs up existing configurations.
+    Use --sync for full synchronization mode with detailed reporting.
     """
     console = Console()
-    console.print(Panel(
-        "Generating optimized Odoo configuration files...\n"
-        "This will standardize configs based on config.json settings.",
-        title="🔧 Config Generator",
-        border_style="cyan"
-    ))
+
+    if sync:
+        console.print(Panel(
+            "[bold blue]🔄 Synchronizing Odoo configurations from config.json[/bold blue]\n\n"
+            "This will generate fresh odoo.conf files based on your config.json settings.\n"
+            "Existing configurations will be backed up automatically.",
+            title="Configuration Synchronization",
+            border_style="cyan"
+        ))
+    else:
+        console.print(Panel(
+            "Generating optimized Odoo configuration files...\n"
+            "This will standardize configs based on config.json settings.",
+            title="🔧 Config Generator",
+            border_style="cyan"
+        ))
 
     try:
         config = ctx.obj['config']
         generator = OdooConfigGenerator(config)
-        generator.generate_all_configs()
 
-        if validate:
-            generator.validate_generated_configs()
+        if sync:
+            # Full synchronization mode with detailed reporting
+            results = generator.sync_all_configs()
+
+            # Auto-validate in sync mode
+            if any(r['status'] == 'success' for r in results.values()):
+                generator.validate_generated_configs()
+        else:
+            # Legacy mode for backward compatibility
+            generator.generate_all_configs()
+
+            # Validate if requested
+            if validate:
+                generator.validate_generated_configs()
 
         console.print("✅ Configuration generation completed!",
                       style="bold green")
@@ -365,9 +388,9 @@ def cleanup_db(ctx, version, yes):
     if not yes:
         databases = []
         if version in ['v15', 'both']:
-            databases.append(config.migration.demo_database_v15)
+            databases.append(config['migration']['demo_database_v15'])
         if version in ['v16', 'both']:
-            databases.append(config.migration.demo_database_v16)
+            databases.append(config['migration']['demo_database_v16'])
 
         if not click.confirm(f"Are you sure you want to delete databases: {', '.join(databases)}?"):
             console.print("❌ Operation cancelled.", style="bold yellow")
@@ -550,10 +573,10 @@ def create_demo_pair(ctx, force):
             console.print(f"\n🌐 Access URLs:", style="bold")
             if 'v15' in results and results['v15']['status'] == 'completed':
                 console.print(
-                    f"  Odoo v15: {config.odoo_v15.web_url} (admin/admin)", style="green")
+                    f"  Odoo v15: {config['odoo_v15']['web_url']} (admin/admin)", style="green")
             if 'v16' in results and results['v16']['status'] == 'completed':
                 console.print(
-                    f"  Odoo v16: {config.odoo_v16.web_url} (admin/admin)", style="green")
+                    f"  Odoo v16: {config['odoo_v16']['web_url']} (admin/admin)", style="green")
 
         if failed_count > 0:
             console.print(
@@ -593,13 +616,13 @@ def list_demo_db(ctx):
         # Get all databases from PostgreSQL
         import psycopg2
 
-        host = 'localhost' if config.postgresql.host == 'postgresql' else config.postgresql.host
+        host = 'localhost' if config['postgresql']['host'] == 'postgresql' else config['postgresql']['host']
 
         conn = psycopg2.connect(
             host=host,
-            port=config.postgresql.port,
-            user=config.postgresql.user,
-            password=config.postgresql.password,
+            port=config['postgresql']['port'],
+            user=config['postgresql']['user'],
+            password=config['postgresql']['password'],
             database='postgres'
         )
 
@@ -629,10 +652,10 @@ def list_demo_db(ctx):
                 # Determine version based on name pattern
                 if 'v15' in db_name:
                     version = 'v15'
-                    url = config.odoo_v15.web_url
+                    url = config['odoo_v15']['web_url']
                 elif 'v16' in db_name:
                     version = 'v16'
-                    url = config.odoo_v16.web_url
+                    url = config['odoo_v16']['web_url']
                 else:
                     version = 'Unknown'
                     url = ''
@@ -897,13 +920,13 @@ def delete_demo_db(ctx, name, version, delete_all, yes):
             # Get all demo databases
             import psycopg2
 
-            host = 'localhost' if config.postgresql.host == 'postgresql' else config.postgresql.host
+            host = 'localhost' if config['postgresql']['host'] == 'postgresql' else config['postgresql']['host']
 
             conn = psycopg2.connect(
                 host=host,
-                port=config.postgresql.port,
-                user=config.postgresql.user,
-                password=config.postgresql.password,
+                port=config['postgresql']['port'],
+                user=config['postgresql']['user'],
+                password=config['postgresql']['password'],
                 database='postgres'
             )
 
@@ -999,9 +1022,9 @@ def delete_db(ctx, version, force, yes):
     # Determine which databases to delete
     databases = []
     if version in ['v15', 'both']:
-        databases.append(('v15', config.migration.demo_database_v15))
+        databases.append(('v15', config['migration']['demo_database_v15']))
     if version in ['v16', 'both']:
-        databases.append(('v16', config.migration.demo_database_v16))
+        databases.append(('v16', config['migration']['demo_database_v16']))
 
     # Display warning and confirmation
     console.print(Panel(
@@ -1168,7 +1191,8 @@ def delete_db_entry():
                     "  --help                        Show this message and exit.")
                 return
             else:
-                i += 1        # Call delete database logic directly
+                i += 1
+
         from src.database_setup import DatabaseSetup
 
         config = ctx.obj['config']
@@ -1176,9 +1200,9 @@ def delete_db_entry():
         # Determine which databases to delete
         databases = []
         if version in ['v15', 'both']:
-            databases.append(('v15', config.migration.demo_database_v15))
+            databases.append(('v15', config['migration']['demo_database_v15']))
         if version in ['v16', 'both']:
-            databases.append(('v16', config.migration.demo_database_v16))
+            databases.append(('v16', config['migration']['demo_database_v16']))
 
         # Display warning and confirmation
         console.print(Panel(
