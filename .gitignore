@@ -1,4 +1,3 @@
-
 # ==============================================================================
 # ODOO MIGRATION PROJECT .GITIGNORE
 # ==============================================================================
@@ -564,3 +563,89 @@ config.json
 *.tar.gz
 *.tar
 !README.tar.gz
+
+# ========================================
+# MCP SERVER & AI TOOLS
+# ========================================
+
+# ChromaDB database files
+chroma_db/
+**/chroma_db/
+*.chroma
+chromadb/
+**/chromadb/
+
+# Vector embeddings and AI models
+embeddings/
+**/embeddings/
+models/
+**/models/
+.cache/
+**/cache/
+
+# MCP server databases and logs
+py_mcp/code_memory.db
+py_mcp/*.db
+**/code_memory.db
+**/mcp_*.db
+
+# MCP server test outputs
+py_mcp/test_report_*.json
+py_mcp/darwin_analysis_*.json
+**/test_report_*.json
+**/darwin_analysis_*.json
+
+# AI/ML temporary files
+*.pkl
+*.pickle
+*.joblib
+*.model
+*.weights
+*.h5
+
+# OpenAI/Claude API keys and configs
+openai_config.json
+claude_config.json
+api_keys.json
+.openai_key
+.claude_key
+
+# LangChain and vector store caches
+.langchain/
+.vectorstore/
+**/langchain_cache/
+
+# Jupyter notebooks checkpoints (for AI experiments)
+.ipynb_checkpoints/
+**/ipynb_checkpoints/
+
+# ========================================
+# PYTHON MCP SERVER SPECIFIC
+# ========================================
+
+# MCP server compiled files
+py_mcp/__pycache__/
+pg_mcp/__pycache__/
+docker_mcp/__pycache__/
+
+# MCP server test databases
+py_mcp/test_*.db
+pg_mcp/test_*.db
+docker_mcp/test_*.db
+
+# MCP server logs
+py_mcp/*.log
+pg_mcp/*.log
+docker_mcp/*.log
+mcp_server.log
+
+# MCP configuration with sensitive data
+py_mcp/config.json
+pg_mcp/config.json
+docker_mcp/config.json
+!**/config.example.json
+
+# MCP server temporary files
+mcp_temp/
+**/mcp_temp/
+.mcp_cache/
