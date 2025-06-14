@@ -2163,31 +2163,35 @@ def install_modules(ctx, version, database_name, modules):
 
     try:
         installer = OdooModuleInstaller(config)
-        
+
         # Convert comma-separated string to list
         module_list = [m.strip() for m in modules.split(',') if m.strip()]
-        
+
         if not module_list:
             console.print("❌ No valid modules specified", style="bold red")
             sys.exit(1)
 
         console.print(f"🔄 Installing {len(module_list)} modules...")
-        
-        result = installer.install_modules_via_command(version, database_name, module_list)
-        
+
+        result = installer.install_modules_via_command(
+            version, database_name, module_list)
+
         # Display results
         console.print("\n✅ Module installation completed", style="bold green")
         console.print(f"Database: [cyan]{result['database']}[/cyan]")
         console.print(f"Version: [cyan]{result['version']}[/cyan]")
-        console.print(f"Total modules: [yellow]{result['total_modules']}[/yellow]")
-        
+        console.print(
+            f"Total modules: [yellow]{result['total_modules']}[/yellow]")
+
         if result['installed_modules']:
-            console.print(f"Successfully installed: [green]{len(result['installed_modules'])}[/green]")
+            console.print(
+                f"Successfully installed: [green]{len(result['installed_modules'])}[/green]")
             for module in result['installed_modules']:
                 console.print(f"  ✅ {module}")
-        
+
         if result['failed_modules']:
-            console.print(f"Failed to install: [red]{len(result['failed_modules'])}[/red]")
+            console.print(
+                f"Failed to install: [red]{len(result['failed_modules'])}[/red]")
             for module in result['failed_modules']:
                 console.print(f"  ❌ {module}")
 
@@ -2221,11 +2225,11 @@ def install_modules_entry():
     # Parse command line arguments manually
     args = sys.argv[1:]  # Skip script name
 
-
-
     if len(args) < 3:
-        console.print("❌ Usage: install-modules <version> <database_name> <modules>", style="bold red")
-        console.print("   Example: install-modules v15 demo_v15 base,sale,purchase", style="yellow")
+        console.print(
+            "❌ Usage: install-modules <version> <database_name> <modules>", style="bold red")
+        console.print(
+            "   Example: install-modules v15 demo_v15 base,sale,purchase", style="yellow")
         sys.exit(1)
 
     version = args[0]
@@ -2246,32 +2250,37 @@ def install_modules_entry():
 
     try:
         installer = OdooModuleInstaller(config)
-        
+
         # Convert comma-separated string to list
         module_list = [m.strip() for m in modules_str.split(',') if m.strip()]
-        
+
         if not module_list:
             console.print("❌ No valid modules specified", style="bold red")
             sys.exit(1)
 
-        console.print(f"🔄 Installing {len(module_list)} modules on {database_name} ({version})...")
+        console.print(
+            f"🔄 Installing {len(module_list)} modules on {database_name} ({version})...")
         console.print(f"Modules: [cyan]{', '.join(module_list)}[/cyan]")
-        
-        result = installer.install_modules_via_command(version, database_name, module_list)
-        
+
+        result = installer.install_modules_via_command(
+            version, database_name, module_list)
+
         # Display results
         console.print("\n✅ Module installation completed", style="bold green")
         console.print(f"Database: [cyan]{result['database']}[/cyan]")
         console.print(f"Version: [cyan]{result['version']}[/cyan]")
-        console.print(f"Total modules: [yellow]{result['total_modules']}[/yellow]")
-        
+        console.print(
+            f"Total modules: [yellow]{result['total_modules']}[/yellow]")
+
         if result['installed_modules']:
-            console.print(f"Successfully installed: [green]{len(result['installed_modules'])}[/green]")
+            console.print(
+                f"Successfully installed: [green]{len(result['installed_modules'])}[/green]")
             for module in result['installed_modules']:
                 console.print(f"  ✅ {module}")
-        
+
         if result['failed_modules']:
-            console.print(f"Failed to install: [red]{len(result['failed_modules'])}[/red]")
+            console.print(
+                f"Failed to install: [red]{len(result['failed_modules'])}[/red]")
             for module in result['failed_modules']:
                 console.print(f"  ❌ {module}")
 

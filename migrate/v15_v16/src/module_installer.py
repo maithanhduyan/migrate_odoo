@@ -115,7 +115,8 @@ class OdooModuleInstaller:
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5 minutes timeout
-                cwd=os.path.join(self.config.get('project', {}).get('workspace_root', './'))
+                cwd=os.path.join(self.config.get(
+                    'project', {}).get('workspace_root', './'))
             )
 
             if result.returncode != 0:
@@ -227,13 +228,14 @@ class OdooModuleInstaller:
             ]
 
             self.logger.debug(f"Processing uninstallation for {module}")
-            
+
             result = subprocess.run(
                 update_cmd,
                 capture_output=True,
                 text=True,
                 timeout=180,  # 3 minutes timeout
-                cwd=os.path.join(self.config.get('project', {}).get('workspace_root', './'))
+                cwd=os.path.join(self.config.get(
+                    'project', {}).get('workspace_root', './'))
             )
 
             if result.returncode != 0:
