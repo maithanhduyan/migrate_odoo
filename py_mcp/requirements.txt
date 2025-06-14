@@ -1,0 +1,23 @@
+# Core dependencies
+chromadb>=0.4.0
+# ChromaDB vector database for storing code patterns
+
+# Optional dependencies for enhanced functionality
+numpy>=1.24.0
+# For numerical operations in code analysis
+
+bcrypt>=4.0.0
+# For password hashing examples in safe patterns
+
+# Development dependencies (optional)
+pytest>=7.0.0
+# For running tests
+
+black>=23.0.0
+# Code formatting
+
+flake8>=6.0.0
+# Linting
+
+# Note: MCP protocol implementation is built-in
+# No additional MCP dependencies required

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py-mcp-server-chromadb"
+version = "0.2.0"
+description = "ChromaDB + MCP Server for VSCode Copilot Agent Enhancement"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "chromadb>=1.0.0",
+    "sentence-transformers>=4.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.11.0",
+    "numpy>=2.3.0",
+    "torch>=2.7.0",
+    "transformers>=4.52.0",
+    "scikit-learn>=1.7.0",
+    "scipy>=1.15.0",
+    "python-multipart>=0.0.20"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true

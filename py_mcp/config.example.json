@@ -1,0 +1,43 @@
+{
+  "chromadb": {
+    "path": "./chroma_db",
+    "collection_name": "python_code_patterns",
+    "embedding_function": "sentence-transformers/all-MiniLM-L6-v2"
+  },
+  "server": {
+    "name": "python-code-quality",
+    "version": "0.2.0",
+    "description": "MCP Server for Python code quality with ChromaDB + memory learning",
+    "port": 8000,
+    "host": "localhost"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "mcp_server.log",
+    "max_size": "10MB",
+    "backup_count": 5
+  },
+  "memory": {
+    "database_path": "./code_memory.db",
+    "context_window_size": 20,
+    "quality_threshold": 75.0,
+    "enable_learning": true
+  },
+  "security": {
+    "max_code_size": 100000,
+    "timeout_seconds": 30,
+    "enable_dangerous_patterns": true,
+    "strict_mode": false
+  },
+  "api": {
+    "openai_api_key": "REPLACE_WITH_YOUR_OPENAI_KEY",
+    "claude_api_key": "REPLACE_WITH_YOUR_CLAUDE_KEY",
+    "enable_llm_generation": false,
+    "use_mock_llm": true
+  },
+  "testing": {
+    "enable_test_mode": false,
+    "test_database_path": "./test_memory.db",
+    "mock_responses": true
+  }
+}
