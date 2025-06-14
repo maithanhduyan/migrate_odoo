@@ -407,3 +407,110 @@ class OdooModuleInstaller:
         except Exception as e:
             self.logger.error(f"Error deleting database {database_name}: {e}")
             return False
+
+    def list_demo_databases(self, version: str) -> List[str]:
+        """Liệt kê tất cả demo databases cho version (v15 hoặc v16)"""
+        try:
+            import psycopg2
+            # Use localhost if needed
+            host = 'localhost' if self.config['postgresql']['host'] == 'postgresql' else self.config['postgresql']['host']
+            conn = psycopg2.connect(
+                host=host,
+                port=self.config['postgresql']['port'],
+                user=self.config['postgresql']['user'],
+                password=self.config['postgresql']['password'],
+                database='postgres'
+            )
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT datname FROM pg_database 
+                    WHERE datname NOT IN ('postgres', 'template0', 'template1')
+                    AND datname LIKE %s
+                    ORDER BY datname
+                    """,
+                    (f'%demo%{version}%',)
+                )
+                results = cursor.fetchall()
+            conn.close()
+            return [row[0] for row in results]
+        except Exception as e:
+            self.logger.error(
+                f"Error listing demo databases for {version}: {e}")
+            return []
+
+    def create_demo_database(self, version: str, database_name: str, force_recreate: bool = False) -> dict:
+        """Tạo demo database cho version (v15 hoặc v16) với tên chỉ định."""
+        import psycopg2
+        host = 'localhost' if self.config['postgresql']['host'] == 'postgresql' else self.config['postgresql']['host']
+        result = {'status': 'failed', 'error': None}
+        try:
+            if self._database_exists_in_postgresql(database_name):
+                if force_recreate:
+                    self.logger.info(
+                        f"Force recreate: Xóa database {database_name} trước khi tạo lại.")
+                    self._delete_database_from_postgresql(database_name)
+                else:
+                    self.logger.info(
+                        f"Demo database {database_name} đã tồn tại.")
+                    result['status'] = 'exists'
+                    return result
+            conn = psycopg2.connect(
+                host=host,
+                port=self.config['postgresql']['port'],
+                user=self.config['postgresql']['user'],
+                password=self.config['postgresql']['password'],
+                database='postgres'
+            )
+            conn.autocommit = True
+            with conn.cursor() as cursor:
+                cursor.execute(f'CREATE DATABASE "{database_name}"')
+            conn.close()
+            self.logger.info(f"✅ Đã tạo demo database {database_name}")
+            result['status'] = 'completed'
+            return result
+        except Exception as e:
+            self.logger.error(
+                f"Error creating demo database {database_name}: {e}")
+            result['error'] = str(e)
+            return result
+
+    def delete_database(self, version: str, database_name: str) -> bool:
+        """Xóa database bất kỳ cho version (v15 hoặc v16)."""
+        return self._delete_database_from_postgresql(database_name)
+
+    def create_database_with_demo(self, version: str, database_name: str) -> dict:
+        """Tạo database Odoo với demo data và modules cơ bản."""
+        result = {'status': 'failed', 'installed_modules': [], 'error': None}
+        try:
+            # Tạo database qua Odoo command với demo data
+            cmd = [
+                'docker', 'exec', self.config[f'odoo_{version}']['container_name'],
+                'odoo', '--database', database_name,
+                '--init', 'base',
+                '--without-demo=False',  # Include demo data
+                '--stop-after-init',
+                '--no-http'
+            ]
+
+            self.logger.info(
+                f"Creating Odoo database {database_name} with demo data...")
+            process_result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300)
+
+            if process_result.returncode == 0:
+                result['status'] = 'completed'
+                result['installed_modules'] = ['base']
+                self.logger.info(
+                    f"✅ Database {database_name} created with demo data")
+            else:
+                result['error'] = f"Command failed: {process_result.stderr}"
+                self.logger.error(
+                    f"❌ Failed to create database: {result['error']}")
+
+            return result
+        except Exception as e:
+            result['error'] = str(e)
+            self.logger.error(
+                f"❌ Error creating database {database_name}: {e}")
+            return result

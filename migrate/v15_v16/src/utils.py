@@ -117,7 +117,7 @@ def check_container_running(container_name: str) -> bool:
 
 def check_database_connection(db_config) -> bool:
     """
-    Simple database connection check using psql command
+    Simple database connection check using psycopg2
 
     Args:
         db_config: Database configuration object
@@ -125,24 +125,23 @@ def check_database_connection(db_config) -> bool:
     Returns:
         True if connection successful
     """
-    # Try using psql command (simpler than psycopg2 dependency)
-    cmd = f"psql -h {db_config['host']} -p {db_config['port']} -U {db_config['user']} -d postgres -c '\\l'"
-
-    # Set password via environment variable
-    env = os.environ.copy()
-    env['PGPASSWORD'] = db_config['password']
-
     try:
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=10
+        import psycopg2
+
+        # Use localhost if needed for host connection
+        host = 'localhost' if db_config['host'] == 'postgresql' else db_config['host']
+
+        conn = psycopg2.connect(
+            host=host,
+            port=db_config['port'],
+            user=db_config['user'],
+            password=db_config['password'],
+            database='postgres',
+            connect_timeout=10
         )
-        return result.returncode == 0
-    except Exception:
+        conn.close()
+        return True
+    except Exception as e:
         return False
 
 

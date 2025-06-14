@@ -104,6 +104,7 @@ def setup_db(ctx, version, force, modules_only):
     This is essential for testing the migration process.
     """
     from src.database_setup import DatabaseSetup
+    import psycopg2
 
     console = Console()
     config = ctx.obj['config']
@@ -421,7 +422,8 @@ def create_demo_db(ctx, version, name, force):
     Creates a new Odoo database with demo data enabled for testing migration.
     This is essential for having realistic data to test the migration process.
     """
-    from src.module_installer import OdooModuleInstaller
+    from src.database_setup import DatabaseSetup
+    import psycopg2
 
     console = Console()
     config = ctx.obj['config']
@@ -439,26 +441,48 @@ def create_demo_db(ctx, version, name, force):
     ))
 
     try:
-        installer = OdooModuleInstaller(config)
+        db_setup = DatabaseSetup(config)
 
         # Check if database exists
-        if not force and installer._database_exists_in_postgresql(name):
+        host = 'localhost' if config['postgresql']['host'] == 'postgresql' else config['postgresql']['host']
+        conn = psycopg2.connect(
+            host=host,
+            port=config['postgresql']['port'],
+            user=config['postgresql']['user'],
+            password=config['postgresql']['password'],
+            database='postgres'
+        )
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s", (name,))
+            exists = cursor.fetchone() is not None
+        conn.close()
+        if not force and exists:
             console.print(
                 f"❌ Database {name} already exists. Use --force to recreate.", style="bold red")
             return
-
-        # Delete existing database if force
-        if force and installer._database_exists_in_postgresql(name):
+        if force and exists:
             console.print(f"🗑️ Removing existing database {name}...")
-            if installer._delete_database_from_postgresql(name):
-                console.print(
-                    f"✅ Database {name} deleted successfully", style="green")
-            else:
-                console.print(
-                    f"⚠️ Failed to delete database {name}, continuing anyway...", style="yellow")
-
+            conn = psycopg2.connect(
+                host=host,
+                port=config['postgresql']['port'],
+                user=config['postgresql']['user'],
+                password=config['postgresql']['password'],
+                database='postgres'
+            )
+            conn.autocommit = True
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT pg_terminate_backend(pid)
+                    FROM pg_stat_activity
+                    WHERE datname = %s AND pid <> pg_backend_pid()
+                """, (name,))
+                cursor.execute(f'DROP DATABASE IF EXISTS "{name}"')
+            conn.close()
+            console.print(
+                f"✅ Database {name} deleted successfully", style="green")
         with console.status(f"[bold green]Creating database {name}...") as status:
-            result = installer.create_database_with_demo(version, name)
+            result = db_setup.create_demo_database(name, version)
 
         # Display result
         if result['status'] == 'completed':
@@ -498,7 +522,8 @@ def create_demo_pair(ctx, force):
     Creates demo databases for both Odoo v15 and v16 with standardized names
     for easy migration testing.
     """
-    from src.module_installer import OdooModuleInstaller
+    from src.database_setup import DatabaseSetup
+    import psycopg2
 
     console = Console()
     config = ctx.obj['config']
@@ -515,40 +540,55 @@ def create_demo_pair(ctx, force):
     ))
 
     try:
-        installer = OdooModuleInstaller(config)
-
+        db_setup = DatabaseSetup(config)
         success_count = 0
         failed_count = 0
         results = {}
-
-        # Create both databases
         for version, db_name in [('v15', demo_v15_name), ('v16', demo_v16_name)]:
             console.print(
                 f"\n🚀 Creating {version.upper()} database: {db_name}")
-
-            # Check if database exists
-            if not force and installer._database_exists_in_postgresql(db_name):
+            host = 'localhost' if config['postgresql']['host'] == 'postgresql' else config['postgresql']['host']
+            conn = psycopg2.connect(
+                host=host,
+                port=config['postgresql']['port'],
+                user=config['postgresql']['user'],
+                password=config['postgresql']['password'],
+                database='postgres'
+            )
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
+                exists = cursor.fetchone() is not None
+            conn.close()
+            if not force and exists:
                 console.print(
                     f"⚠️ Database {db_name} already exists. Use --force to recreate.", style="yellow")
                 results[version] = {'status': 'skipped',
                                     'reason': 'already_exists'}
                 continue
-
-            # Delete existing database if force
-            if force and installer._database_exists_in_postgresql(db_name):
+            if force and exists:
                 console.print(f"🗑️ Removing existing database {db_name}...")
-                if installer._delete_database_from_postgresql(db_name):
-                    console.print(
-                        f"✅ Database {db_name} deleted successfully", style="green")
-                else:
-                    console.print(
-                        f"⚠️ Failed to delete database {db_name}, continuing anyway...", style="yellow")
-
+                conn = psycopg2.connect(
+                    host=host,
+                    port=config['postgresql']['port'],
+                    user=config['postgresql']['user'],
+                    password=config['postgresql']['password'],
+                    database='postgres'
+                )
+                conn.autocommit = True
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT pg_terminate_backend(pid)
+                        FROM pg_stat_activity
+                        WHERE datname = %s AND pid <> pg_backend_pid()
+                    """, (db_name,))
+                    cursor.execute(f'DROP DATABASE IF EXISTS "{db_name}"')
+                conn.close()
+                console.print(
+                    f"✅ Database {db_name} deleted successfully", style="green")
             with console.status(f"[bold green]Creating {version} database {db_name}..."):
-                result = installer.create_database_with_demo(version, db_name)
-
+                result = db_setup.create_demo_database(db_name, version)
             results[version] = result
-
             if result['status'] == 'completed':
                 console.print(
                     f"✅ {version.upper()} database {db_name} created successfully!", style="bold green")
@@ -1502,8 +1542,7 @@ def setup_db_entry():
 
         # Run setup
         setup = DatabaseSetup(config)
-        result = setup.setup_databases(
-            version, force_recreate=force, modules_only=modules_only)
+        result = setup.setup_demo_databases()
         _display_setup_results(console, result)
 
     except Exception as e:
@@ -1780,7 +1819,6 @@ def list_demo_db_entry():
             console.print("  No v16 demo databases found")
 
     except Exception as e:
-        console = Console()
         console.print(f"❌ Database listing failed: {e}", style="bold red")
         sys.exit(1)
     finally:

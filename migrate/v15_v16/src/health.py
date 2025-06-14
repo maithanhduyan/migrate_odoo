@@ -791,6 +791,18 @@ class OdooMigrationHealthChecker:
             )
             self.console.print(panel)
 
+    def check_all_services(self) -> dict:
+        """Run all main service checks and return a summary dict."""
+        results = {}
+        results['docker'] = self.check_docker_environment()
+        results['network'] = self.check_network()
+        results['containers'] = self.check_containers()
+        results['database'] = self.check_database_connectivity()
+        results['web'] = self.check_web_services()
+        results['network_connectivity'] = self.check_network_connectivity()
+        # Optionally add more checks if needed
+        return results
+
 
 @click.command()
 @click.option('--detailed', '-d', is_flag=True, help='Show detailed information')
@@ -821,8 +833,11 @@ def main(detailed: bool, fix: bool, config: str):
         sys.exit(exit_code)
 
     except Exception as e:
-        console = Console()
-        console.print(f"❌ Health check failed: {e}", style="bold red")
+        if RICH_AVAILABLE and Console:
+            console = Console()
+            console.print(f"❌ Health check failed: {e}", style="bold red")
+        else:
+            print(f"❌ Health check failed: {e}")
         sys.exit(1)
 
 

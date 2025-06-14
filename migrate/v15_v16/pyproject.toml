@@ -17,11 +17,11 @@ requires-python = ">=3.10"
 migrate = "main:cli"
 odoo-migrate = "main:cli"
 
-# Health check commands
+#1. Health check commands
 health-check = "main:health_check_entry"
 check = "main:check_entry"
 
-# Database management commands
+#2. Database management commands
 setup-db = "main:setup_db_entry"
 check-db = "main:check_db_entry"
 cleanup-db = "main:cleanup_db_entry"
@@ -38,7 +38,7 @@ delete-demo-db = "main:delete_demo_db_entry"
 config-generate = "main:config_generate_entry"
 config-sync = "main:config_generate_entry"
 
-# Migration workflow commands
+#3. Migration workflow commands
 analyze-db = "main:analyze_db_entry"
 plan-migration = "main:plan_migration_entry"
 validate = "main:validate_entry"
