@@ -13,14 +13,39 @@ dependencies = [
 requires-python = ">=3.10"
 
 [project.scripts]
+# Main CLI entry points
 migrate = "main:cli"
 odoo-migrate = "main:cli"
+
+# Health check commands
 health-check = "main:health_check_entry"
 check = "main:check_entry"
+
+# Database management commands
+setup-db = "main:setup_db_entry"
+check-db = "main:check_db_entry"
+cleanup-db = "main:cleanup_db_entry"
 delete-db = "main:delete_db_entry"
+
+# Demo database commands
 create-demo = "main:create_demo_entry"
+create-demo-db = "main:create_demo_db_entry"
+create-demo-pair = "main:create_demo_pair_entry"
+list-demo-db = "main:list_demo_db_entry"
+delete-demo-db = "main:delete_demo_db_entry"
+
+# Configuration commands
 config-generate = "main:config_generate_entry"
 config-sync = "main:config_generate_entry"
+
+# Migration workflow commands
+analyze-db = "main:analyze_db_entry"
+plan-migration = "main:plan_migration_entry"
+validate = "main:validate_entry"
+
+# Information commands
+status = "main:status_entry"
+info = "main:info_entry"
 
 
 [tool.hatch.build.targets.wheel]

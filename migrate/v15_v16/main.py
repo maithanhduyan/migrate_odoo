@@ -207,7 +207,7 @@ def status(ctx):
     console.print(Panel(
         f"Project: {config['project']['name']}\n"
         f"Version: {config['project']['version']}\n"
-        f"Workspace: {config['workspace_path']}\n"
+        f"Workspace: {config.get('workspace_path', config['project'].get('workspace_root', '../../'))}\n"
         f"Network: {config['environment']['docker_network']}",
         title="📊 Migration Status",
         border_style="blue"
@@ -247,13 +247,11 @@ def info(ctx):
     Displays detailed configuration and environment information.
     """
     console = Console()
-    config = ctx.obj['config']
-
-    # Project info
+    config = ctx.obj['config']    # Project info
     console.print(Panel(
         f"Name: {config['project']['name']}\n"
         f"Version: {config['project']['version']}\n"
-        f"Workspace: {config['workspace_path']}",
+        f"Workspace: {config.get('workspace_path', config['project'].get('workspace_root', '../../'))}",
         title="📦 Project Information",
         border_style="blue"
     ))
@@ -1307,672 +1305,799 @@ def check_entry():
     health_check_entry()
 
 
-@cli.command('create-demo')
-@click.option('--version', '-v', type=click.Choice(['v15', 'v16', 'both']), default='both',
-              help='Which version to create demo database for (default: both)')
-@click.option('--force', '-f', is_flag=True, help='Force recreate existing databases')
-@click.option('--with-modules', is_flag=True, help='Install demo modules after creating database')
-@click.pass_context
-def create_demo(ctx, version, force, with_modules):
-    """
-    🏗️ Create Odoo demo databases
-
-    Creates demo databases with standardized names:
-    - odoo_demo_v15 for Odoo v15
-    - odoo_demo_v16 for Odoo v16
-
-    Perfect for testing and development with consistent naming.
-    """
-    from src.database_setup import DatabaseSetup
-    from src.utils import validate_database_deletion_mcp
-
-    console = Console()
-    config = ctx.obj['config']
-
-    # Define demo database names
-    demo_databases = {
-        'v15': 'odoo_demo_v15',
-        'v16': 'odoo_demo_v16'
-    }
-
-    # Determine which databases to create
-    databases_to_create = []
-    if version in ['v15', 'both']:
-        databases_to_create.append(('v15', demo_databases['v15']))
-    if version in ['v16', 'both']:
-        databases_to_create.append(('v16', demo_databases['v16']))
-
-    console.print(Panel(
-        f"[bold blue]🏗️ Create Demo Databases[/bold blue]\n\n"
-        f"Version: [cyan]{version}[/cyan]\n"
-        f"Force recreate: [cyan]{force}[/cyan]\n"
-        f"Install modules: [cyan]{with_modules}[/cyan]\n\n"
-        f"Databases to create:\n" +
-        "\n".join(
-            [f"• {db[0].upper()}: [green]{db[1]}[/green]" for db in databases_to_create]),
-        title="📦 Demo Database Creation",
-        border_style="green"
-    ))
-
-    try:
-        db_setup = DatabaseSetup(config)
-
-        # Check existing databases first
-        console.print("\n🔍 Checking existing databases...")
-        from src.utils import check_database_exists_mcp
-
-        existing_databases = []
-        for db_version, db_name in databases_to_create:
-            if check_database_exists_mcp(db_name):
-                existing_databases.append((db_version, db_name))
-
-        if existing_databases and not force:
-            console.print(
-                f"⚠️ The following databases already exist:\n" +
-                "\n".join([f"  • {db[0].upper()}: {db[1]}" for db in existing_databases]) +
-                f"\n\nUse --force to recreate them.",
-                style="bold yellow"
-            )
-            return
-
-        # Create databases
-        success_count = 0
-        failed_count = 0
-        creation_results = {}
-
-        for db_version, db_name in databases_to_create:
-            console.print(
-                f"\n🚀 Creating {db_version.upper()} database: {db_name}")
-
-            with console.status(f"[bold green]Creating {db_version} database {db_name}..."):
-                # If force and database exists, delete it first
-                if force and check_database_exists_mcp(db_name):
-                    console.print(
-                        f"🗑️ Removing existing database {db_name}...")
-                    # Use MCP to delete database first
-                    from src.utils import delete_database_mcp
-                    success, message = delete_database_mcp(db_name)
-                    if not success:
-                        console.print(
-                            f"❌ Failed to delete existing database: {message}", style="red")
-                        failed_count += 1
-                        continue                # Create the database using DatabaseSetup
-                result = db_setup.create_demo_database(db_name, db_version)
-
-                if result['status'] == 'completed':
-                    if with_modules:
-                        # Install basic modules
-                        console.print(
-                            f"📦 Installing demo modules for {db_version}...")
-                        # This would require extending DatabaseSetup to support custom database names
-                        # For now, just create the database
-                        pass
-
-                    creation_results[db_version] = {
-                        'database': db_name,
-                        'status': 'completed',
-                        'modules_installed': with_modules
-                    }
-                    success_count += 1
-                else:
-                    console.print(
-                        f"❌ Failed to create {db_name}: {result.get('error', 'Unknown error')}", style="red")
-                    creation_results[db_version] = {
-                        'database': db_name,
-                        'status': 'failed',
-                        'error': result.get('error', 'Unknown error')
-                    }
-                    failed_count += 1
-
-        # Display results
-        _display_demo_creation_results(
-            console, creation_results, databases_to_create)
-
-        # Validate creation using MCP PostgreSQL
-        console.print("\n🔍 Validating creation using MCP PostgreSQL...")
-        created_db_names = [db_name for db_version, db_name in databases_to_create if creation_results.get(
-            db_version, {}).get('status') == 'completed']
-
-        if created_db_names:
-            from src.utils import get_databases_list_mcp
-            current_databases = get_databases_list_mcp()
-
-            validated_count = 0
-            for db_name in created_db_names:
-                if check_database_exists_mcp(db_name):
-                    validated_count += 1
-                    console.print(
-                        f"✅ Confirmed: {db_name} exists", style="green")
-                else:
-                    console.print(
-                        f"❌ Warning: {db_name} not found", style="red")
-
-            console.print(
-                f"📊 MCP Validation: {validated_count}/{len(created_db_names)} databases confirmed created",
-                style="bold green" if validated_count == len(
-                    created_db_names) else "bold yellow"
-            )
-
-        # Summary
-        if failed_count == 0:
-            console.print(
-                "🎉 All demo databases created successfully!", style="bold green")
-        else:
-            console.print(
-                f"⚠️ {failed_count} databases failed to create. Check logs for details.",
-                style="yellow"
-            )
-
-    except Exception as e:
-        console.print(
-            f"❌ Failed to create demo databases: {e}", style="bold red")
-        sys.exit(1)
-
-
-@cli.command('install-app')
-@click.option('--version', '-v', type=click.Choice(['v15', 'v16']), required=True,
-              help='Which Odoo version to install app in')
-@click.option('--database', '-d', help='Database name (default: odoo_demo_v15 or odoo_demo_v16)')
-@click.option('--app', '-a', multiple=True, help='App technical name to install (can be used multiple times)')
-@click.option('--list', 'list_apps', is_flag=True, help='List all available apps')
-@click.option('--popular', is_flag=True, help='Install popular apps bundle (CRM, Sales, Accounting, etc.)')
-@click.pass_context
-def install_app(ctx, version, database, app, list_apps, popular):
-    """
-    📦 Install apps in Odoo CE
-
-    Install one or more apps in an existing Odoo database.
-    Use --list to see all available apps or --popular for common business apps.
-    """
+def create_demo_entry():
+    """Entry point for create-demo command"""
+    from pathlib import Path
+    from src.config import get_config
     from src.module_installer import OdooModuleInstaller
 
+    # Add src to Python path
+    project_root = Path(__file__).parent
+    src_path = project_root / 'src'
+    sys.path.insert(0, str(src_path))
+
+    # Change to script directory
+    os.chdir(str(project_root))
+
     console = Console()
-    config = ctx.obj['config']
-
-    # Default database name if not provided
-    if not database:
-        database = f'odoo_demo_{version}'
-
     console.print(Panel(
-        f"[bold blue]📦 Install Odoo Apps[/bold blue]\n\n"
-        f"Version: [cyan]Odoo {version}[/cyan]\n"
-        f"Database: [green]{database}[/green]",
-        title="App Installation",
+        "🏗️ Demo Database Creation Tool\n"
+        "Create standardized Odoo v15/v16 demo databases for migration testing.",
+        title="Demo Database Creation",
         border_style="blue"
     ))
 
+    # Parse command line arguments manually
+    args = sys.argv[1:]  # Skip script name
+
+    # Load configuration
     try:
+        config = get_config()
+        console.print(f"✅ Configuration loaded")
+    except Exception as e:
+        console.print(f"❌ Failed to load configuration: {e}", style="bold red")
+        sys.exit(1)
+
+    # Parse the arguments for create_demo command
+    version = 'both'
+    force = False
+    with_modules = False
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ['-v', '--version'] and i + 1 < len(args):
+            version = args[i + 1]
+            i += 2
+        elif arg in ['-f', '--force']:
+            force = True
+            i += 1
+        elif arg == '--with-modules':
+            with_modules = True
+            i += 1
+        else:
+            i += 1
+
+    # Run demo database creation
+    try:
+        demo_v15_name = "demo_v15"
+        demo_v16_name = "demo_v16"
+
+        console.print(Panel.fit(
+            f"[bold blue]Create Demo Database Pair[/bold blue]\n\n"
+            f"V15 Database: [green]{demo_v15_name}[/green]\n"
+            f"V16 Database: [green]{demo_v16_name}[/green]\n"
+            f"Force recreate: [cyan]{force}[/cyan]\n"
+            f"With modules: [cyan]{with_modules}[/cyan]",
+            title="🏗️ Database Pair Creation"
+        ))
+
         installer = OdooModuleInstaller(config)
 
-        # List available apps
-        if list_apps:
-            console.print("\n🔍 Getting available apps...")
-            with console.status("[bold blue]Querying Odoo database..."):
-                # Query database for available apps
-                apps = _get_available_apps(database, version)
+        databases = []
+        if version in ['v15', 'both']:
+            databases.append(('v15', demo_v15_name))
+        if version in ['v16', 'both']:
+            databases.append(('v16', demo_v16_name))
 
-            if apps:
-                _display_available_apps(console, apps)
-            else:
+        results = {}
+        for db_version, db_name in databases:
+            console.print(
+                f"\n🏗️ Creating {db_version.upper()} database: {db_name}")
+            try:
+                result = installer.create_demo_database(
+                    db_version, db_name, force_recreate=force)
+                results[db_version] = result
+
+                if result.get('status') == 'completed':
+                    console.print(
+                        f"✅ Successfully created {db_version.upper()} database: {db_name}")
+
+                    if with_modules:
+                        console.print(
+                            f"📦 Installing demo modules for {db_name}...")
+                        module_result = installer.install_demo_modules(
+                            db_version, db_name)
+                        if module_result.get('success'):
+                            console.print(
+                                f"✅ Demo modules installed successfully")
+                        else:
+                            console.print(f"⚠️ Some modules failed to install")
+                else:
+                    console.print(
+                        f"❌ Failed to create {db_version.upper()} database: {result.get('error', 'Unknown error')}")
+
+            except Exception as e:
                 console.print(
-                    "❌ No apps found or database not accessible", style="red")
-            return
-
-        # Popular apps bundle
-        if popular:
-            popular_apps = [
-                'crm',           # CRM
-                'sale_management',  # Sales
-                'account',       # Accounting
-                'purchase',      # Purchase
-                'stock',         # Inventory
-                'project',       # Project Management
-                'hr',            # Employees
-                'calendar',      # Calendar
-                'contacts'       # Contacts
-            ]
-            apps_to_install = popular_apps
-            console.print(
-                f"\n📦 Installing popular apps bundle: {', '.join(popular_apps)}")
-        else:
-            apps_to_install = list(app) if app else []
-
-        if not apps_to_install:
-            console.print(
-                "❌ No apps specified to install. Use --app <app_name> or --popular", style="red")
-            console.print("💡 Use --list to see available apps", style="dim")
-            return
-
-        # Verify database exists
-        if not _verify_database_exists(database):
-            console.print(f"❌ Database '{database}' not found", style="red")
-            return
-
-        # Install apps
-        console.print(f"\n🚀 Installing {len(apps_to_install)} apps...")
-
-        with console.status(f"[bold green]Installing apps in {database}..."):
-            result = installer.install_modules_via_command(
-                version=version,
-                database_name=database,
-                modules=apps_to_install
-            )
+                    f"❌ Error creating {db_version.upper()} database: {e}")
+                results[db_version] = {'status': 'failed', 'error': str(e)}
 
         # Display results
-        _display_installation_results(console, result)
+        _display_demo_creation_results(console, results, databases)
 
     except Exception as e:
-        console.print(f"❌ Failed to install apps: {e}", style="bold red")
+        console.print(f"❌ Demo creation failed: {e}", style="bold red")
         sys.exit(1)
-
-
-@cli.command('uninstall-app')
-@click.option('--version', '-v', type=click.Choice(['v15', 'v16']), required=True,
-              help='Which Odoo version to uninstall app from')
-@click.option('--database', '-d', help='Database name (default: odoo_demo_v15 or odoo_demo_v16)')
-@click.option('--app', '-a', multiple=True, help='App technical name to uninstall (can be used multiple times)')
-@click.option('--list-installed', is_flag=True, help='List all installed apps')
-@click.option('--yes', '-y', is_flag=True, help='Skip confirmation prompt')
-@click.pass_context
-def uninstall_app(ctx, version, database, app, list_installed, yes):
-    """
-    🗑️ Uninstall apps from Odoo CE
-
-    Remove one or more apps from an existing Odoo database.
-    Use --list-installed to see currently installed apps.
-    """
-    from src.module_installer import OdooModuleInstaller
-
-    console = Console()
-    config = ctx.obj['config']
-
-    # Default database name if not provided
-    if not database:
-        database = f'odoo_demo_{version}'
-
-    console.print(Panel(
-        f"[bold red]🗑️ Uninstall Odoo Apps[/bold red]\n\n"
-        f"Version: [cyan]Odoo {version}[/cyan]\n"
-        f"Database: [green]{database}[/green]",
-        title="App Uninstallation",
-        border_style="red"
-    ))
-
-    try:
-        # List installed apps
-        if list_installed:
-            console.print("\n🔍 Getting installed apps...")
-            with console.status("[bold blue]Querying Odoo database..."):
-                apps = _get_installed_apps(database, version)
-
-            if apps:
-                _display_installed_apps(console, apps)
-            else:
-                console.print(
-                    "❌ No apps found or database not accessible", style="red")
-            return
-
-        apps_to_uninstall = list(app) if app else []
-
-        if not apps_to_uninstall:
-            console.print(
-                "❌ No apps specified to uninstall. Use --app <app_name>", style="red")
-            console.print(
-                "💡 Use --list-installed to see installed apps", style="dim")
-            return
-
-        # Verify database exists
-        if not _verify_database_exists(database):
-            console.print(f"❌ Database '{database}' not found", style="red")
-            return
-
-        # Confirmation
-        if not yes:
-            console.print(
-                f"\n⚠️  About to uninstall: {', '.join(apps_to_uninstall)}")
-            if not click.confirm("Are you sure you want to continue?"):
-                console.print("❌ Uninstallation cancelled", style="yellow")
-                return
-
-        # Uninstall apps
-        console.print(f"\n🗑️ Uninstalling {len(apps_to_uninstall)} apps...")
-
-        with console.status(f"[bold red]Uninstalling apps from {database}..."):
-            result = _uninstall_modules_via_command(
-                config=config,
-                version=version,
-                database_name=database,
-                modules=apps_to_uninstall
-            )
-
-        # Display results
-        _display_uninstallation_results(console, result)
-
-    except Exception as e:
-        console.print(f"❌ Failed to uninstall apps: {e}", style="bold red")
-        sys.exit(1)
-
-
-@cli.command('list-apps')
-@click.option('--version', '-v', type=click.Choice(['v15', 'v16']), required=True,
-              help='Which Odoo version to query')
-@click.option('--database', '-d', help='Database name (default: odoo_demo_v15 or odoo_demo_v16)')
-@click.option('--status', '-s', type=click.Choice(['all', 'installed', 'uninstalled']), default='all',
-              help='Filter apps by installation status')
-@click.option('--category', '-c', help='Filter apps by category (e.g., Sales, Accounting)')
-@click.pass_context
-def list_apps(ctx, version, database, status, category):
-    """
-    📋 List Odoo CE apps
-
-    Show all available, installed, or uninstalled apps in an Odoo database.
-    Filter by status or category for easier browsing.
-    """
-    console = Console()
-    config = ctx.obj['config']
-
-    # Default database name if not provided
-    if not database:
-        database = f'odoo_demo_{version}'
-
-    console.print(Panel(
-        f"[bold blue]📋 Odoo Apps List[/bold blue]\n\n"
-        f"Version: [cyan]Odoo {version}[/cyan]\n"
-        f"Database: [green]{database}[/green]\n"
-        f"Status: [yellow]{status}[/yellow]" +
-        (f"\nCategory: [magenta]{category}[/magenta]" if category else ""),
-        title="Apps Listing",
-        border_style="blue"
-    ))
-
-    try:
-        # Verify database exists
-        if not _verify_database_exists(database):
-            console.print(f"❌ Database '{database}' not found", style="red")
-            return
-
-        console.print("\n🔍 Getting apps information...")
-
-        with console.status("[bold blue]Querying Odoo database..."):
-            apps = _get_apps_with_filter(database, version, status, category)
-
-        if apps:
-            _display_apps_list(console, apps, status)
-        else:
-            console.print("❌ No apps found matching criteria", style="red")
-
-    except Exception as e:
-        console.print(f"❌ Failed to list apps: {e}", style="bold red")
-        sys.exit(1)
-
-
-def _get_available_apps(database: str, version: str) -> List[Dict[str, Any]]:
-    """Get list of available apps from Odoo database"""
-    try:
-        query = """
-        SELECT name, shortdesc, summary, category_id, state, application
-        FROM ir_module_module 
-        WHERE application = true AND state = 'uninstalled'
-        ORDER BY category_id, name
-        """
-        return _execute_query(database, query)
-    except Exception as e:
-        return []
-
-
-def _get_installed_apps(database: str, version: str) -> List[Dict[str, Any]]:
-    """Get list of installed apps from Odoo database"""
-    try:
-        query = """
-        SELECT name, shortdesc, summary, category_id, state, application
-        FROM ir_module_module 
-        WHERE application = true AND state = 'installed'
-        ORDER BY category_id, name
-        """
-        return _execute_query(database, query)
-    except Exception as e:
-        return []
-
-
-def _get_apps_with_filter(database: str, version: str, status: str, category: str = None) -> List[Dict[str, Any]]:
-    """Get filtered list of apps from Odoo database"""
-    try:
-        conditions = ["application = true"]
-
-        if status == 'installed':
-            conditions.append("state = 'installed'")
-        elif status == 'uninstalled':
-            conditions.append("state = 'uninstalled'")
-
-        if category:
-            conditions.append(f"category_id ILIKE '%{category}%'")
-
-        where_clause = " AND ".join(conditions)
-
-        query = f"""
-        SELECT name, shortdesc, summary, category_id, state, application
-        FROM ir_module_module 
-        WHERE {where_clause}
-        ORDER BY category_id, name
-        """
-        return _execute_query(database, query)
-    except Exception as e:
-        return []
-
-
-def _execute_query(database: str, query: str) -> List[Dict[str, Any]]:
-    """Execute SQL query on database"""
-    import subprocess
-
-    try:
-        cmd = [
-            'docker', 'exec', 'postgresql',
-            'psql', '-U', 'odoo', '-d', database,
-            '-t', '-A', '-F', '|', '-c', query
-        ]
-
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=30)
-
-        if result.returncode == 0:
-            apps = []
-            for line in result.stdout.strip().split('\n'):
-                if line and '|' in line:
-                    parts = line.split('|')
-                    if len(parts) >= 6:
-                        apps.append({
-                            'name': parts[0],
-                            'shortdesc': parts[1],
-                            'summary': parts[2],
-                            'category': parts[3],
-                            'state': parts[4],
-                            'application': parts[5] == 't'
-                        })
-            return apps
-        else:
-            return []
-
-    except Exception as e:
-        return []
-
-
-def _verify_database_exists(database: str) -> bool:
-    """Verify database exists"""
-    from src.utils import check_database_exists_mcp
-    return check_database_exists_mcp(database)
-
-
-def _uninstall_modules_via_command(config, version: str, database_name: str, modules: List[str]) -> Dict[str, Any]:
-    """Uninstall modules via Odoo command line"""
-    from src.module_installer import OdooModuleInstaller
-
-    installer = OdooModuleInstaller(config)
-    return installer.uninstall_modules_via_command(version, database_name, modules)
-
-
-def _display_available_apps(console: Console, apps: List[Dict[str, Any]]) -> None:
-    """Display available apps in a formatted table"""
-    from rich.table import Table
-
-    table = Table(title="📦 Available Apps (Uninstalled)")
-    table.add_column("Technical Name", style="cyan")
-    table.add_column("Display Name", style="green")
-    table.add_column("Category", style="magenta")
-    table.add_column("Summary", style="dim")
-
-    for app in apps:
-        table.add_row(
-            app.get('name', ''),
-            app.get('shortdesc', ''),
-            app.get('category', ''),
-            app.get('summary', '')[
-                :50] + '...' if len(app.get('summary', '')) > 50 else app.get('summary', '')
-        )
-
-    console.print(table)
-    console.print(
-        f"\n💡 Use: install-app -v {apps[0].get('version', 'v15')} -a <app_name> to install", style="dim")
-
-
-def _display_installed_apps(console: Console, apps: List[Dict[str, Any]]) -> None:
-    """Display installed apps in a formatted table"""
-    from rich.table import Table
-
-    table = Table(title="✅ Installed Apps")
-    table.add_column("Technical Name", style="cyan")
-    table.add_column("Display Name", style="green")
-    table.add_column("Category", style="magenta")
-    table.add_column("Summary", style="dim")
-
-    for app in apps:
-        table.add_row(
-            app.get('name', ''),
-            app.get('shortdesc', ''),
-            app.get('category', ''),
-            app.get('summary', '')[
-                :50] + '...' if len(app.get('summary', '')) > 50 else app.get('summary', '')
-        )
-
-    console.print(table)
-    console.print(
-        f"\n💡 Use: uninstall-app -v {apps[0].get('version', 'v15')} -a <app_name> to uninstall", style="dim")
-
-
-def _display_apps_list(console: Console, apps: List[Dict[str, Any]], status: str) -> None:
-    """Display apps list with status indicators"""
-    from rich.table import Table
-
-    title = f"📋 Apps List ({status.title()})"
-    table = Table(title=title)
-    table.add_column("Technical Name", style="cyan")
-    table.add_column("Display Name", style="green")
-    table.add_column("Status", style="bold")
-    table.add_column("Category", style="magenta")
-    table.add_column("Summary", style="dim")
-
-    for app in apps:
-        state = app.get('state', '')
-        if state == 'installed':
-            status_icon = "✅ Installed"
-            status_style = "green"
-        elif state == 'uninstalled':
-            status_icon = "⭕ Available"
-            status_style = "yellow"
-        else:
-            status_icon = f"❓ {state}"
-            status_style = "dim"
-
-        table.add_row(
-            app.get('name', ''),
-            app.get('shortdesc', ''),
-            f"[{status_style}]{status_icon}[/{status_style}]",
-            app.get('category', ''),
-            app.get('summary', '')[
-                :40] + '...' if len(app.get('summary', '')) > 40 else app.get('summary', '')
-        )
-
-    console.print(table)
-
-
-def _display_installation_results(console: Console, result: Dict[str, Any]) -> None:
-    """Display installation results"""
-    from rich.table import Table
-
-    # Summary table
-    summary_table = Table(title="📦 Installation Summary")
-    summary_table.add_column("Metric", style="cyan")
-    summary_table.add_column("Value", style="green")
-
-    summary_table.add_row("Total Modules", str(result.get('total_modules', 0)))
-    summary_table.add_row("Successfully Installed", str(
-        len(result.get('installed_modules', []))))
-    summary_table.add_row("Failed", str(len(result.get('failed_modules', []))))
-
-    console.print(summary_table)
-
-    # Success modules
-    if result.get('installed_modules'):
-        console.print(
-            f"\n✅ Successfully installed: {', '.join(result['installed_modules'])}", style="green")
-
-    # Failed modules
-    if result.get('failed_modules'):
-        console.print(
-            f"\n❌ Failed to install: {', '.join(result['failed_modules'])}", style="red")
-        if result.get('error'):
-            console.print(f"Error: {result['error']}", style="dim red")
-
-
-def _display_uninstallation_results(console: Console, result: Dict[str, Any]) -> None:
-    """Display uninstallation results"""
-    from rich.table import Table
-
-    # Summary table
-    summary_table = Table(title="🗑️ Uninstallation Summary")
-    summary_table.add_column("Metric", style="cyan")
-    summary_table.add_column("Value", style="green")
-
-    summary_table.add_row("Total Modules", str(result.get('total_modules', 0)))
-    summary_table.add_row("Successfully Uninstalled", str(
-        len(result.get('uninstalled_modules', []))))
-    summary_table.add_row("Failed", str(len(result.get('failed_modules', []))))
-
-    console.print(summary_table)
-
-    # Success modules
-    if result.get('uninstalled_modules'):
-        console.print(
-            f"\n✅ Successfully uninstalled: {', '.join(result['uninstalled_modules'])}", style="green")    # Failed modules
-    if result.get('failed_modules'):
-        console.print(
-            f"\n❌ Failed to uninstall: {', '.join(result['failed_modules'])}", style="red")
-        if result.get('error'):
-            console.print(f"Error: {result['error']}", style="dim red")
 
 
 def config_generate_entry():
     """Entry point for config generation script"""
-    import os
     from pathlib import Path
     from src.config_generator import OdooConfigGenerator
-    from src.config import load_config
+    from src.config import get_config
 
     # Change to the script directory to find config.json
     script_dir = Path(__file__).parent
     original_cwd = os.getcwd()
 
     try:
-        os.chdir(script_dir)
+        os.chdir(str(script_dir))
 
-        # Load config and create generator
-        config = load_config()
+        console = Console()
+        console.print(Panel(
+            "🔄 Configuration Generator\n"
+            "Generate and synchronize Odoo configuration files from config.json",
+            title="Config Generator",
+            border_style="cyan"
+        ))
+
+        # Load configuration
+        config = get_config()
+
+        # Create generator and run sync
         generator = OdooConfigGenerator(config)
         generator.sync_all_configs()
+        console.print("✅ Configuration generation completed successfully!")
 
+    except Exception as e:
+        console = Console()
+        console.print(
+            f"❌ Configuration generation failed: {e}", style="bold red")
+        sys.exit(1)
     finally:
-        # Restore original working directory
         os.chdir(original_cwd)
-    generator.sync_all_configs()
+
+
+def setup_db_entry():
+    """Entry point for setup-db command"""
+    from pathlib import Path
+    from src.config import get_config
+    from src.database_setup import DatabaseSetup
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        console.print(Panel(
+            "📦 Database Setup Tool\n"
+            "Setup demo databases for both v15 and v16 with full Odoo CE modules and sample data.",
+            title="Database Setup",
+            border_style="blue"
+        ))
+
+        # Parse arguments
+        args = sys.argv[1:]
+        version = 'both'
+        force = False
+        modules_only = False
+
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg in ['-v', '--version'] and i + 1 < len(args):
+                version = args[i + 1]
+                i += 2
+            elif arg in ['-f', '--force']:
+                force = True
+                i += 1
+            elif arg == '--modules-only':
+                modules_only = True
+                i += 1
+            else:
+                i += 1
+
+        # Run setup
+        setup = DatabaseSetup(config)
+        result = setup.setup_databases(
+            version, force_recreate=force, modules_only=modules_only)
+        _display_setup_results(console, result)
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Database setup failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def check_db_entry():
+    """Entry point for check-db command"""
+    from pathlib import Path
+    from src.config import get_config
+    from src.database_setup import DatabaseSetup
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        console.print(Panel.fit(
+            "[bold blue]Checking Demo Databases Status[/bold blue]",
+            title="🔍 Database Check"
+        ))
+
+        setup = DatabaseSetup(config)
+        result = setup.check_databases()
+        _display_check_results(console, result)
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Database check failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def cleanup_db_entry():
+    """Entry point for cleanup-db command"""
+    from pathlib import Path
+    from src.config import get_config
+    from src.database_setup import DatabaseSetup
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        # Parse arguments
+        args = sys.argv[1:]
+        version = 'both'
+        yes = False
+
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg in ['-v', '--version'] and i + 1 < len(args):
+                version = args[i + 1]
+                i += 2
+            elif arg in ['-y', '--yes']:
+                yes = True
+                i += 1
+            else:
+                i += 1
+
+        console.print(Panel(
+            f"🧹 Cleanup Demo Databases\n"
+            f"Version: {version}",
+            title="Database Cleanup",
+            border_style="yellow"
+        ))
+
+        if not yes:
+            confirm = input(
+                "Are you sure you want to cleanup databases? (y/N): ")
+            if confirm.lower() != 'y':
+                console.print("❌ Cleanup cancelled")
+                return
+
+        setup = DatabaseSetup(config)
+        result = setup.cleanup_databases(version)
+        _display_cleanup_results(console, result)
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Database cleanup failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def create_demo_db_entry():
+    """Entry point for create-demo-db command"""
+    from pathlib import Path
+    from src.config import get_config
+    from src.module_installer import OdooModuleInstaller
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        # Parse arguments
+        args = sys.argv[1:]
+        version = None
+        name = None
+        force = False
+
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg in ['-v', '--version'] and i + 1 < len(args):
+                version = args[i + 1]
+                i += 2
+            elif arg in ['-n', '--name'] and i + 1 < len(args):
+                name = args[i + 1]
+                i += 2
+            elif arg in ['-f', '--force']:
+                force = True
+                i += 1
+            else:
+                i += 1
+
+        if not version:
+            console.print(
+                "❌ Version is required. Use -v v15 or -v v16", style="bold red")
+            sys.exit(1)
+
+        if not name:
+            name = f"demo_{version}"
+
+        console.print(Panel.fit(
+            f"[bold blue]Create Demo Database[/bold blue]\n\n"
+            f"Version: [cyan]Odoo {version}[/cyan]\n"
+            f"Database: [green]{name}[/green]\n"
+            f"Force recreate: [cyan]{force}[/cyan]",
+            title="🏗️ Database Creation"
+        ))
+
+        installer = OdooModuleInstaller(config)
+        result = installer.create_demo_database(
+            version, name, force_recreate=force)
+
+        if result.get('status') == 'completed':
+            console.print(
+                f"✅ Successfully created {version.upper()} database: {name}")
+        else:
+            console.print(
+                f"❌ Failed to create database: {result.get('error', 'Unknown error')}")
+            sys.exit(1)
+
+    except Exception as e:
+        console = Console()
+        console.print(
+            f"❌ Demo database creation failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def create_demo_pair_entry():
+    """Entry point for create-demo-pair command"""
+    from pathlib import Path
+    from src.config import get_config
+    from src.module_installer import OdooModuleInstaller
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        # Parse arguments
+        args = sys.argv[1:]
+        force = False
+
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg in ['-f', '--force']:
+                force = True
+                i += 1
+            else:
+                i += 1
+
+        demo_v15_name = "demo_v15"
+        demo_v16_name = "demo_v16"
+
+        console.print(Panel.fit(
+            f"[bold blue]Create Demo Database Pair[/bold blue]\n\n"
+            f"V15 Database: [green]{demo_v15_name}[/green]\n"
+            f"V16 Database: [green]{demo_v16_name}[/green]\n"
+            f"Force recreate: [cyan]{force}[/cyan]",
+            title="🏗️ Database Pair Creation"
+        ))
+
+        installer = OdooModuleInstaller(config)
+        databases = [('v15', demo_v15_name), ('v16', demo_v16_name)]
+        results = {}
+
+        for db_version, db_name in databases:
+            console.print(
+                f"\n🏗️ Creating {db_version.upper()} database: {db_name}")
+            result = installer.create_demo_database(
+                db_version, db_name, force_recreate=force)
+            results[db_version] = result
+
+            if result.get('status') == 'completed':
+                console.print(
+                    f"✅ Successfully created {db_version.upper()} database: {db_name}")
+            else:
+                console.print(
+                    f"❌ Failed to create {db_version.upper()} database: {result.get('error', 'Unknown error')}")
+
+        _display_demo_creation_results(console, results, databases)
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Demo pair creation failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def list_demo_db_entry():
+    """Entry point for list-demo-db command"""
+    from pathlib import Path
+    from src.config import get_config
+    from src.module_installer import OdooModuleInstaller
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        console.print(Panel.fit(
+            "[bold blue]Demo Databases List[/bold blue]",
+            title="📋 Database Listing"
+        ))
+
+        installer = OdooModuleInstaller(config)
+
+        # List v15 databases
+        console.print("\n📦 Odoo v15 Databases:")
+        v15_dbs = installer.list_demo_databases('v15')
+        if v15_dbs:
+            for db in v15_dbs:
+                console.print(f"  • {db}")
+        else:
+            console.print("  No v15 demo databases found")
+
+        # List v16 databases
+        console.print("\n📦 Odoo v16 Databases:")
+        v16_dbs = installer.list_demo_databases('v16')
+        if v16_dbs:
+            for db in v16_dbs:
+                console.print(f"  • {db}")
+        else:
+            console.print("  No v16 demo databases found")
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Database listing failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def delete_demo_db_entry():
+    """Entry point for delete-demo-db command"""
+    from pathlib import Path
+    from src.config import get_config
+    from src.module_installer import OdooModuleInstaller
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        # Parse arguments
+        args = sys.argv[1:]
+        name = None
+        version = None
+        delete_all = False
+        yes = False
+
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg in ['-n', '--name'] and i + 1 < len(args):
+                name = args[i + 1]
+                i += 2
+            elif arg in ['-v', '--version'] and i + 1 < len(args):
+                version = args[i + 1]
+                i += 2
+            elif arg == '--all':
+                delete_all = True
+                i += 1
+            elif arg in ['-y', '--yes']:
+                yes = True
+                i += 1
+            else:
+                i += 1
+
+        if not (name or version or delete_all):
+            console.print(
+                "❌ Must specify --name, --version, or --all", style="bold red")
+            sys.exit(1)
+
+        console.print(Panel(
+            "🗑️ Delete Demo Databases\n"
+            "Removes demo databases. Use with caution!",
+            title="Database Deletion",
+            border_style="red"
+        ))
+
+        installer = OdooModuleInstaller(config)
+
+        # Determine databases to delete
+        databases = []
+        if name:
+            # Need to determine version for specific name
+            if 'v15' in name or version == 'v15':
+                databases.append(('v15', name))
+            elif 'v16' in name or version == 'v16':
+                databases.append(('v16', name))
+            else:
+                console.print(
+                    "❌ Cannot determine version for database. Use --version", style="bold red")
+                sys.exit(1)
+        elif version:
+            # Delete all for specific version
+            demo_dbs = installer.list_demo_databases(version)
+            for db in demo_dbs:
+                databases.append((version, db))
+        elif delete_all:
+            # Delete all demo databases
+            for v in ['v15', 'v16']:
+                demo_dbs = installer.list_demo_databases(v)
+                for db in demo_dbs:
+                    databases.append((v, db))
+
+        if not databases:
+            console.print("❌ No databases found to delete",
+                          style="bold yellow")
+            return
+
+        # Confirmation
+        if not yes:
+            console.print(f"\nDatabases to delete:")
+            for db_version, db_name in databases:
+                console.print(f"  • {db_version.upper()}: {db_name}")
+
+            confirm = input(
+                "\nAre you sure you want to delete these databases? (y/N): ")
+            if confirm.lower() != 'y':
+                console.print("❌ Deletion cancelled")
+                return
+
+        # Delete databases
+        results = {}
+        for db_version, db_name in databases:
+            console.print(
+                f"🗑️ Deleting {db_version.upper()} database: {db_name}")
+            try:
+                success = installer.delete_database(db_version, db_name)
+                results[f"{db_version}_{db_name}"] = {'deleted': success}
+                if success:
+                    console.print(
+                        f"✅ Deleted {db_version.upper()} database: {db_name}")
+                else:
+                    console.print(
+                        f"❌ Failed to delete {db_version.upper()} database: {db_name}")
+            except Exception as e:
+                results[f"{db_version}_{db_name}"] = {
+                    'deleted': False, 'error': str(e)}
+                console.print(
+                    f"❌ Error deleting {db_version.upper()} database {db_name}: {e}")
+
+    except Exception as e:
+        console = Console()
+        console.print(
+            f"❌ Demo database deletion failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def analyze_db_entry():
+    """Entry point for analyze-db command"""
+    from pathlib import Path
+    from src.config import get_config
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        console.print(Panel(
+            "📊 Database Analysis\n"
+            "Compares database schemas between v15 and v16 to identify migration requirements.",
+            title="Database Analysis",
+            border_style="cyan"
+        ))
+
+        console.print("🚧 Database analysis - Coming soon!",
+                      style="bold yellow")
+        console.print("This will analyze and compare database structures.")
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Database analysis failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def plan_migration_entry():
+    """Entry point for plan-migration command"""
+    from pathlib import Path
+    from src.config import get_config
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        console.print(Panel(
+            "📋 Migration Planning\n"
+            "Creates a detailed migration blueprint based on database analysis.",
+            title="Migration Planning",
+            border_style="cyan"
+        ))
+
+        console.print("🚧 Migration planning - Coming soon!",
+                      style="bold yellow")
+        console.print("This will generate a detailed migration plan.")
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Migration planning failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def validate_entry():
+    """Entry point for validate command"""
+    from pathlib import Path
+    from src.config import get_config
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        console.print(Panel(
+            "✅ Migration Validation\n"
+            "Verifies that migration completed successfully and data integrity is maintained.",
+            title="Migration Validation",
+            border_style="green"
+        ))
+
+        console.print("🚧 Migration validation - Coming soon!",
+                      style="bold yellow")
+        console.print("This will validate the migration results.")
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Migration validation failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def status_entry():
+    """Entry point for status command"""
+    from pathlib import Path
+    from src.config import get_config
+    from src.health import OdooMigrationHealthChecker
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        console.print(Panel(
+            f"Project: {config['project']['name']}\n"
+            f"Version: {config['project']['version']}\n"
+            f"Workspace: {config.get('workspace_path', '../../')}\n"
+            f"Network: {config['environment']['docker_network']}",
+            title="📊 Migration Status",
+            border_style="blue"
+        ))
+
+        # Quick health check
+        console.print("\n🔍 Quick Health Check:")
+        try:
+            health_checker = OdooMigrationHealthChecker(config)
+            health_results = health_checker.check_all_services()
+
+            for service, status in health_results.items():
+                if status.get('healthy', False):
+                    console.print(f"  ✅ {service}: OK")
+                else:
+                    console.print(
+                        f"  ❌ {service}: {status.get('error', 'Failed')}")
+        except Exception as e:
+            console.print(f"  ❌ Health check failed: {e}")
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Status check failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def info_entry():
+    """Entry point for info command"""
+    from pathlib import Path
+    from src.config import get_config
+
+    script_dir = Path(__file__).parent
+    original_cwd = os.getcwd()
+
+    try:
+        os.chdir(str(script_dir))
+        console = Console()
+        config = get_config()
+
+        # Project info
+        console.print(Panel(
+            f"Name: {config['project']['name']}\n"
+            f"Version: {config['project']['version']}\n"
+            f"Workspace: {config.get('workspace_path', '../../')}",
+            title="📦 Project Information",
+            border_style="blue"
+        ))
+
+        # Service URLs
+        console.print(Panel(
+            f"Odoo v15: {config['odoo_v15']['web_url']}\n"
+            f"Odoo v16: {config['odoo_v16']['web_url']}\n"
+            f"PostgreSQL: {config['postgresql']['host']}:{config['postgresql']['port']}",
+            title="🌐 Service URLs",
+            border_style="green"
+        ))
+
+        # Migration phases
+        phases_text = "\n".join(
+            [f"  {i + 1}. {phase}" for i, phase in enumerate(config['migration']['migration_phases'])])
+        console.print(Panel(
+            phases_text,
+            title="📋 Migration Phases",
+            border_style="yellow"
+        ))
+
+    except Exception as e:
+        console = Console()
+        console.print(f"❌ Info display failed: {e}", style="bold red")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
 
 
 if __name__ == "__main__":
