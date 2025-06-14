@@ -34,6 +34,9 @@ create-demo-pair = "main:create_demo_pair_entry"
 list-demo-db = "main:list_demo_db_entry"
 delete-demo-db = "main:delete_demo_db_entry"
 
+# Module management commands
+install-modules = "main:install_modules_entry"
+
 # Configuration commands
 config-generate = "main:config_generate_entry"
 config-sync = "main:config_generate_entry"

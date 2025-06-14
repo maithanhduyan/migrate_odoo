@@ -34,10 +34,9 @@ class OdooModuleInstaller:
             modules: Danh sách modules cần cài
 
         Returns:
-            Dict chứa kết quả cài đặt
-        """
-        odoo_config = getattr(self.config, f'odoo_{version}')
-        container_name = odoo_config.container_name
+            Dict chứa kết quả cài đặt        """
+        odoo_config = self.config.get(f'odoo_{version}', {})
+        container_name = odoo_config.get('container_name', f'odoo_{version}')
 
         result = {
             'version': version,
@@ -116,7 +115,7 @@ class OdooModuleInstaller:
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5 minutes timeout
-                cwd=os.path.join(self.config.project.workspace_root)
+                cwd=os.path.join(self.config.get('project', {}).get('workspace_root', './'))
             )
 
             if result.returncode != 0:
@@ -141,10 +140,9 @@ class OdooModuleInstaller:
             modules: Danh sách modules cần gỡ bỏ
 
         Returns:
-            Dict chứa kết quả gỡ bỏ
-        """
-        odoo_config = getattr(self.config, f'odoo_{version}')
-        container_name = odoo_config.container_name
+            Dict chứa kết quả gỡ bỏ        """
+        odoo_config = self.config.get(f'odoo_{version}', {})
+        container_name = odoo_config.get('container_name', f'odoo_{version}')
 
         result = {
             'version': version,
@@ -229,12 +227,13 @@ class OdooModuleInstaller:
             ]
 
             self.logger.debug(f"Processing uninstallation for {module}")
+            
             result = subprocess.run(
                 update_cmd,
                 capture_output=True,
                 text=True,
                 timeout=180,  # 3 minutes timeout
-                cwd=os.path.join(self.config.project.workspace_root)
+                cwd=os.path.join(self.config.get('project', {}).get('workspace_root', './'))
             )
 
             if result.returncode != 0:
@@ -290,11 +289,11 @@ class OdooModuleInstaller:
     def _start_odoo_container(self, container_name: str, version: str) -> None:
         """Khởi động Odoo container"""
         try:
-            odoo_config = getattr(self.config, f'odoo_{version}')
+            odoo_config = self.config.get(f'odoo_{version}', {})
 
             # Khởi động container từ docker-compose
             compose_path = os.path.join(
-                self.config.project.workspace_root, odoo_config.docker_compose_path)
+                self.config['project']['workspace_root'], odoo_config.get('docker_compose_path', f'odoo_{version}/compose.yml'))
             cmd = ['docker-compose', '-f', compose_path, 'up', '-d']
 
             subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -307,8 +306,8 @@ class OdooModuleInstaller:
 
     def get_available_modules(self, version: str) -> List[str]:
         """Lấy danh sách modules có sẵn trong container"""
-        odoo_config = getattr(self.config, f'odoo_{version}')
-        container_name = odoo_config.container_name
+        odoo_config = self.config.get(f'odoo_{version}', {})
+        container_name = odoo_config.get('container_name', f'odoo_{version}')
 
         try:
             # Command để list modules

@@ -2138,5 +2138,147 @@ def info_entry():
         os.chdir(original_cwd)
 
 
+@cli.command('install-modules')
+@click.argument('version', type=click.Choice(['v15', 'v16']))
+@click.argument('database_name')
+@click.argument('modules')
+@click.pass_context
+def install_modules(ctx, version, database_name, modules):
+    """
+    📦 Install modules on existing database
+
+    Install specified modules on an existing Odoo database.
+    Modules should be comma-separated (e.g., "base,sale,purchase").
+    """
+    from src.module_installer import OdooModuleInstaller
+
+    console = Console()
+    config = ctx.obj['config']
+
+    console.print(Panel.fit(
+        f"[bold blue]Installing modules on {database_name} ({version})[/bold blue]\n"
+        f"Modules: [cyan]{modules}[/cyan]",
+        title="📦 Module Installation"
+    ))
+
+    try:
+        installer = OdooModuleInstaller(config)
+        
+        # Convert comma-separated string to list
+        module_list = [m.strip() for m in modules.split(',') if m.strip()]
+        
+        if not module_list:
+            console.print("❌ No valid modules specified", style="bold red")
+            sys.exit(1)
+
+        console.print(f"🔄 Installing {len(module_list)} modules...")
+        
+        result = installer.install_modules_via_command(version, database_name, module_list)
+        
+        # Display results
+        console.print("\n✅ Module installation completed", style="bold green")
+        console.print(f"Database: [cyan]{result['database']}[/cyan]")
+        console.print(f"Version: [cyan]{result['version']}[/cyan]")
+        console.print(f"Total modules: [yellow]{result['total_modules']}[/yellow]")
+        
+        if result['installed_modules']:
+            console.print(f"Successfully installed: [green]{len(result['installed_modules'])}[/green]")
+            for module in result['installed_modules']:
+                console.print(f"  ✅ {module}")
+        
+        if result['failed_modules']:
+            console.print(f"Failed to install: [red]{len(result['failed_modules'])}[/red]")
+            for module in result['failed_modules']:
+                console.print(f"  ❌ {module}")
+
+    except Exception as e:
+        console.print(f"❌ Failed to install modules: {e}", style="bold red")
+        sys.exit(1)
+
+
+def install_modules_entry():
+    """Entry point for install-modules command"""
+    from pathlib import Path
+    from src.config import get_config
+    from src.module_installer import OdooModuleInstaller
+
+    # Add src to Python path
+    project_root = Path(__file__).parent
+    src_path = project_root / 'src'
+    sys.path.insert(0, str(src_path))
+
+    # Change to script directory
+    os.chdir(str(project_root))
+
+    console = Console()
+    console.print(Panel(
+        "📦 Module Installation Tool\n"
+        "Install specific modules on existing Odoo databases.",
+        title="Module Installation",
+        border_style="blue"
+    ))
+
+    # Parse command line arguments manually
+    args = sys.argv[1:]  # Skip script name
+
+
+
+    if len(args) < 3:
+        console.print("❌ Usage: install-modules <version> <database_name> <modules>", style="bold red")
+        console.print("   Example: install-modules v15 demo_v15 base,sale,purchase", style="yellow")
+        sys.exit(1)
+
+    version = args[0]
+    database_name = args[1]
+    modules_str = args[2]
+
+    if version not in ['v15', 'v16']:
+        console.print("❌ Version must be 'v15' or 'v16'", style="bold red")
+        sys.exit(1)
+
+    # Load configuration
+    try:
+        config = get_config()
+        console.print(f"✅ Configuration loaded")
+    except Exception as e:
+        console.print(f"❌ Failed to load configuration: {e}", style="bold red")
+        sys.exit(1)
+
+    try:
+        installer = OdooModuleInstaller(config)
+        
+        # Convert comma-separated string to list
+        module_list = [m.strip() for m in modules_str.split(',') if m.strip()]
+        
+        if not module_list:
+            console.print("❌ No valid modules specified", style="bold red")
+            sys.exit(1)
+
+        console.print(f"🔄 Installing {len(module_list)} modules on {database_name} ({version})...")
+        console.print(f"Modules: [cyan]{', '.join(module_list)}[/cyan]")
+        
+        result = installer.install_modules_via_command(version, database_name, module_list)
+        
+        # Display results
+        console.print("\n✅ Module installation completed", style="bold green")
+        console.print(f"Database: [cyan]{result['database']}[/cyan]")
+        console.print(f"Version: [cyan]{result['version']}[/cyan]")
+        console.print(f"Total modules: [yellow]{result['total_modules']}[/yellow]")
+        
+        if result['installed_modules']:
+            console.print(f"Successfully installed: [green]{len(result['installed_modules'])}[/green]")
+            for module in result['installed_modules']:
+                console.print(f"  ✅ {module}")
+        
+        if result['failed_modules']:
+            console.print(f"Failed to install: [red]{len(result['failed_modules'])}[/red]")
+            for module in result['failed_modules']:
+                console.print(f"  ❌ {module}")
+
+    except Exception as e:
+        console.print(f"❌ Failed to install modules: {e}", style="bold red")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     cli()
